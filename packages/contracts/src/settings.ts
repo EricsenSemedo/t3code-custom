@@ -42,10 +42,28 @@ export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6
 export const DEFAULT_TTS_SERVER_URL = "http://127.0.0.1:8880";
 export const DEFAULT_TTS_VOICE = "af_heart";
 
+/**
+ * Trimmed string field that decodes blank values back to `fallback`. Without
+ * this, a user clearing the field persists `""`, which silently breaks the
+ * setting at use-time (e.g. an empty TTS server URL POSTs to `/v1/audio/...`
+ * with no host) instead of falling back to the default.
+ */
+const makeStringWithFallback = (fallback: string) =>
+  TrimmedString.pipe(
+    Schema.decodeTo(
+      Schema.String,
+      SchemaTransformation.transformOrFail({
+        decode: (value) => Effect.succeed(value || fallback),
+        encode: (value) => Effect.succeed(value),
+      }),
+    ),
+    Schema.withDecodingDefault(Effect.succeed(fallback)),
+  );
+
 export const TtsClientSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  serverUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_TTS_SERVER_URL))),
-  voice: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_TTS_VOICE))),
+  serverUrl: makeStringWithFallback(DEFAULT_TTS_SERVER_URL),
+  voice: makeStringWithFallback(DEFAULT_TTS_VOICE),
 });
 export type TtsClientSettings = typeof TtsClientSettings.Type;
 

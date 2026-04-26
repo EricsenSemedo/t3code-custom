@@ -1,7 +1,16 @@
-import { ArchiveIcon, ArchiveX, LoaderIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArchiveX,
+  Loader2Icon,
+  LoaderIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  Volume2Icon,
+  VolumeXIcon,
+} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MessageId,
   defaultInstanceIdForDriver,
@@ -61,7 +70,8 @@ import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
-import { stackedThreadToast, toastManager } from "../ui/toast";
+import { anchoredToastManager, stackedThreadToast, toastManager } from "../ui/toast";
+import { useAudioPlayerStore } from "../../audioPlayerStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import {
@@ -501,6 +511,29 @@ export function GeneralSettingsPanel() {
     otlpMetricsEnabled: observability?.otlpMetricsEnabled ?? false,
     otlpMetricsUrl: observability?.otlpMetricsUrl,
   });
+  const ttsPreviewButtonRef = useRef<HTMLButtonElement>(null);
+  // Mirror playback state for the Test button. Without this, the button gives
+  // no feedback during synthesis/playback and silently swallows errors —
+  // there's no `MessagePlayButton` mounted in Settings, so the error toast
+  // surface that lives on each play button isn't reachable from here.
+  const ttsPreviewStatus = useAudioPlayerStore((s) => s.status);
+  const ttsPreviewPlayingId = useAudioPlayerStore((s) => s.playingMessageId);
+  const ttsPreviewError = useAudioPlayerStore((s) => s.error);
+  const isTtsPreviewActive = ttsPreviewPlayingId === ttsPreviewMessageId;
+  const isTtsPreviewLoading = isTtsPreviewActive && ttsPreviewStatus === "loading";
+  const isTtsPreviewPlaying = isTtsPreviewActive && ttsPreviewStatus === "playing";
+
+  useEffect(() => {
+    if (ttsPreviewError === null || ttsPreviewButtonRef.current === null) return;
+    if (ttsPreviewPlayingId !== ttsPreviewMessageId) return;
+    anchoredToastManager.add({
+      data: { tooltipStyle: true },
+      positionerProps: { anchor: ttsPreviewButtonRef.current },
+      timeout: 4000,
+      title: "TTS playback failed",
+      description: ttsPreviewError,
+    });
+  }, [ttsPreviewError, ttsPreviewPlayingId, ttsPreviewMessageId]);
 
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenInstanceId = textGenerationModelSelection.instanceId;
@@ -986,6 +1019,7 @@ export function GeneralSettingsPanel() {
                 aria-label="TTS voice"
               />
               <Button
+                ref={ttsPreviewButtonRef}
                 size="xs"
                 variant="outline"
                 disabled={
@@ -999,11 +1033,20 @@ export function GeneralSettingsPanel() {
                       `This is the ${settings.tts.voice} voice. The quick brown fox jumps over the lazy dog.`,
                     )
                     .catch(() => {
-                      // Error surfaced via audioPlayerStore; no-op here.
+                      // Errors surface via the audioPlayerStore + the
+                      // anchored-toast effect above.
                     });
                 }}
+                aria-label={isTtsPreviewActive ? "Stop TTS preview" : "Play TTS preview"}
               >
-                Test
+                {isTtsPreviewLoading ? (
+                  <Loader2Icon className="size-3 animate-spin" />
+                ) : isTtsPreviewPlaying ? (
+                  <VolumeXIcon className="size-3" />
+                ) : (
+                  <Volume2Icon className="size-3" />
+                )}
+                <span>{isTtsPreviewActive ? "Stop" : "Test"}</span>
               </Button>
             </div>
           }

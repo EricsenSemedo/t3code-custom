@@ -24,7 +24,13 @@ interface AudioPlayerActions {
   setLoading: (id: MessageId) => void;
   setPlaying: (id: MessageId) => void;
   setIdle: () => void;
-  setError: (message: string) => void;
+  /**
+   * Mark playback as failed. `id` must be the message that triggered the
+   * failed request — `MessagePlayButton` uses it to attribute the anchored
+   * error toast to the originating button (otherwise every mounted button
+   * would surface the same toast).
+   */
+  setError: (id: MessageId, message: string) => void;
 }
 
 export const useAudioPlayerStore = create<AudioPlayerState & AudioPlayerActions>((set) => ({
@@ -34,5 +40,5 @@ export const useAudioPlayerStore = create<AudioPlayerState & AudioPlayerActions>
   setLoading: (id) => set({ status: "loading", playingMessageId: id, error: null }),
   setPlaying: (id) => set({ status: "playing", playingMessageId: id, error: null }),
   setIdle: () => set({ status: "idle", playingMessageId: null }),
-  setError: (message) => set({ status: "idle", playingMessageId: null, error: message }),
+  setError: (id, message) => set({ status: "idle", playingMessageId: id, error: message }),
 }));

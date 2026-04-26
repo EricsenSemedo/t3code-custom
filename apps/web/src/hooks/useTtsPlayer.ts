@@ -28,7 +28,15 @@ function ensureAudioElement(): HTMLAudioElement {
     });
     audioElement.addEventListener("error", () => {
       const store = useAudioPlayerStore.getState();
-      store.setError("Audio playback failed.");
+      // Attribute the error to whichever message was active when the audio
+      // element raised it; if nothing was playing there's no button to
+      // anchor a toast to, so just clear state.
+      const id = store.playingMessageId;
+      if (id !== null) {
+        store.setError(id, "Audio playback failed.");
+      } else {
+        store.setIdle();
+      }
       teardown();
     });
   }
@@ -92,7 +100,7 @@ export async function startPlayback(
     }
     abortController = null;
     const message = error instanceof Error ? error.message : "TTS request failed.";
-    useAudioPlayerStore.getState().setError(message);
+    useAudioPlayerStore.getState().setError(id, message);
     throw error;
   }
 
@@ -100,20 +108,34 @@ export async function startPlayback(
   if (abortController !== controller) {
     return;
   }
-  abortController = null;
 
   const blobUrl = URL.createObjectURL(blob);
   currentBlobUrl = blobUrl;
   const audio = ensureAudioElement();
   audio.src = blobUrl;
 
+  // Hold ownership through `audio.play()`. If we cleared `abortController`
+  // before the await, a concurrent `startPlayback` could install its own
+  // controller and we'd clobber its state from this call's catch branch
+  // (the rejection would arrive after the new call set `loading`).
   try {
     await audio.play();
+    if (abortController !== controller) {
+      // Superseded while audio.play() was resolving; the newer call owns
+      // the store now.
+      return;
+    }
+    abortController = null;
     useAudioPlayerStore.getState().setPlaying(id);
   } catch (error) {
+    if (abortController !== controller) {
+      // Superseded — the newer call already updated the store.
+      return;
+    }
+    abortController = null;
     teardown();
     const message = error instanceof Error ? error.message : "Audio playback failed.";
-    useAudioPlayerStore.getState().setError(message);
+    useAudioPlayerStore.getState().setError(id, message);
     throw error;
   }
 }
