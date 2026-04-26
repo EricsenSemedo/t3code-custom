@@ -3873,6 +3873,7 @@ export default function ChatView(props: ChatViewProps) {
               timestampFormat={timestampFormat}
               workspaceRoot={activeWorkspaceRoot}
               skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
+              ttsEnabled={ttsEnabled}
               onIsAtEndChange={onIsAtEndChange}
             />
 

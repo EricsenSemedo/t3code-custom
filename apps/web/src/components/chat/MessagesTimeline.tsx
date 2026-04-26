@@ -60,12 +60,15 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { MessagePlayButton } from "./MessagePlayButton";
+import { stopPlayback as stopTtsPlayback } from "~/hooks/useTtsPlayer";
 import {
   computeStableMessagesTimelineRows,
   MAX_VISIBLE_WORK_LOG_ENTRIES,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
+  resolveAssistantMessagePlayState,
   type StableMessagesTimelineRowsState,
   type MessagesTimelineRow,
   type TimelineLatestTurn,
@@ -109,6 +112,7 @@ interface TimelineRowSharedState {
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
+  ttsEnabled: boolean;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -151,6 +155,7 @@ interface MessagesTimelineProps {
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
   skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
+  ttsEnabled: boolean;
   onIsAtEndChange: (isAtEnd: boolean) => void;
 }
 
@@ -178,6 +183,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   timestampFormat,
   workspaceRoot,
   skills = EMPTY_TIMELINE_SKILLS,
+  ttsEnabled,
   onIsAtEndChange,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
@@ -278,6 +284,12 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }
   }, [listRef, onIsAtEndChange]);
 
+  useEffect(() => {
+    return () => {
+      stopTtsPlayback();
+    };
+  }, []);
+
   const previousRowCountRef = useRef(rows.length);
   useEffect(() => {
     const previousRowCount = previousRowCountRef.current;
@@ -305,6 +317,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      ttsEnabled,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -318,6 +331,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      ttsEnabled,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -557,6 +571,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         />
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
+            <AssistantPlayButton row={row} />
             <AssistantCopyButton row={row} />
             {!row.message.streaming && (
               <Tooltip>
@@ -595,6 +610,28 @@ function AssistantCopyButton({ row }: { row: Extract<TimelineRow, { kind: "messa
   }
 
   return <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />;
+}
+
+function AssistantPlayButton({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const assistantPlayState = resolveAssistantMessagePlayState({
+    text: row.message.text ?? null,
+    showCopyButton: row.showAssistantCopyButton,
+    streaming: row.assistantCopyStreaming,
+    ttsEnabled: ctx.ttsEnabled,
+  });
+
+  if (!assistantPlayState.visible) {
+    return null;
+  }
+
+  return (
+    <MessagePlayButton
+      messageId={row.message.id}
+      text={assistantPlayState.text ?? ""}
+      variant="ghost"
+    />
+  );
 }
 
 function ProposedPlanTimelineRow({
