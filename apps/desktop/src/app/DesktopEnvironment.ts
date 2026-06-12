@@ -161,9 +161,7 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
   const displayName = branding.displayName;
   const stateDir = path.join(baseDir, isDevelopment ? "dev" : "userdata");
   const userDataDirName = isDevelopment ? "t3code-custom-dev" : "t3code-custom";
-  const legacyUserDataDirName = isDevelopment
-    ? "T3 Code Custom (Dev)"
-    : "T3 Code Custom (Alpha)";
+  const legacyUserDataDirName = isDevelopment ? "T3 Code Custom (Dev)" : "T3 Code Custom (Alpha)";
   const resourcesPath = input.resourcesPath;
 
   return DesktopEnvironment.of({
