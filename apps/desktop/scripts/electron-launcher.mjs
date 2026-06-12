@@ -1,4 +1,4 @@
-// This file mostly exists because we want dev mode to say "T3 Code (Dev)" instead of "electron"
+// This file mostly exists because we want dev mode to say "T3 Code Custom (Dev)" instead of "electron"
 
 import { spawnSync } from "node:child_process";
 import {
@@ -25,10 +25,10 @@ const repoRoot = resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-export const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+export const APP_DISPLAY_NAME = isDevelopment ? "T3 Code Custom (Dev)" : "T3 Code Custom (Alpha)";
 export const APP_BUNDLE_ID = isDevelopment
-  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
-  : "com.t3tools.t3code";
+  ? `com.ericsensemedo.t3codecustom.dev.${devBundleIdSuffix || "local"}`
+  : "com.ericsensemedo.t3codecustom";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
 const LAUNCHER_VERSION = 10;
 const defaultIconPath = join(desktopDir, "resources", "icon.icns");
