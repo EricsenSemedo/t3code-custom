@@ -1,6 +1,6 @@
-# Release Checklist
+# Custom Release Checklist
 
-This document covers how to run desktop releases from one tag, first without signing, then with signing.
+This document covers how to run custom desktop releases from one tag, first without signing, then with signing.
 
 ## What the workflow does
 
@@ -15,7 +15,7 @@ This document covers how to run desktop releases from one tag, first without sig
   - Versions with a suffix after `X.Y.Z` (for example `1.2.3-alpha.1`) are published as GitHub prereleases.
   - Only plain `X.Y.Z` releases are marked as the repository's latest release.
 - Includes Electron auto-update metadata (for example `latest*.yml` and `*.blockmap`) in release assets.
-- Publishes the CLI package (`apps/server`, npm package `t3`) with OIDC trusted publishing.
+- Publishes one GitHub Release for the custom desktop app.
 - Signing is optional and auto-detected per platform from secrets.
 
 ## Desktop auto-update notes
@@ -29,6 +29,7 @@ This document covers how to run desktop releases from one tag, first without sig
 - Repository slug source:
   - `T3CODE_DESKTOP_UPDATE_REPOSITORY` (format `owner/repo`), if set.
   - otherwise `GITHUB_REPOSITORY` from GitHub Actions.
+  - otherwise the fork default `EricsenSemedo/t3code-custom`.
 - Temporary private-repo auth workaround:
   - set `T3CODE_DESKTOP_UPDATE_GITHUB_TOKEN` (or `GH_TOKEN`) in the desktop app runtime environment.
   - the app forwards it as an `Authorization: Bearer <token>` request header for updater HTTP calls.
@@ -40,24 +41,16 @@ This document covers how to run desktop releases from one tag, first without sig
   - `electron-updater` reads `latest-mac.yml` for both Intel and Apple Silicon.
   - The workflow merges the per-arch mac manifests into one `latest-mac.yml` before publishing the GitHub Release.
 
-## 0) npm OIDC trusted publishing setup (CLI)
+## 0) Fork identity requirements
 
-The workflow publishes the CLI with `bun publish` from `apps/server` after bumping
-the package version to the release tag version.
+Custom desktop releases assume the fork uses its own desktop identity and updater feed:
 
-Checklist:
+- app identity: `com.ericsensemedo.t3codecustom`
+- default packaged data root: `~/.t3-custom`
+- default desktop dev data root: `~/.t3-custom-dev`
+- updater feed: `EricsenSemedo/t3code-custom`
 
-1. Confirm npm org/user owns package `t3` (or rename package first if needed).
-2. In npm package settings, configure Trusted Publisher:
-   - Provider: GitHub Actions
-   - Repository: this repo
-   - Workflow file: `.github/workflows/release.yml`
-   - Environment (if used): match your npm trusted publishing config
-3. Ensure npm account and org policies allow trusted publishing for the package.
-4. Create release tag `vX.Y.Z` and push; workflow will:
-   - set `apps/server/package.json` version to `X.Y.Z`
-   - build web + server
-   - run `bun publish --access public`
+Do not point packaged custom builds at upstream releases unless you explicitly want upstream to overwrite the fork.
 
 ## 1) Dry-run release without signing
 
@@ -137,6 +130,8 @@ Checklist:
    - preflight passes
    - all matrix builds pass
    - release job uploads expected files
+   - release name is `T3 Code Custom vX.Y.Z`
+   - updater assets were attached (`latest*.yml`, `.blockmap`)
 6. Smoke test downloaded artifacts.
 
 ## 5) Troubleshooting

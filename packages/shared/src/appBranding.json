@@ -1,0 +1,13 @@
+{
+  "appBaseName": "T3 Code Custom",
+  "productionStageLabel": "Alpha",
+  "developmentStageLabel": "Dev",
+  "desktopAppId": "com.ericsensemedo.t3codecustom",
+  "desktopUpdateRepository": "EricsenSemedo/t3code-custom",
+  "defaultHomeDirName": ".t3-custom",
+  "defaultDesktopDevHomeDirName": ".t3-custom-dev",
+  "desktopScheme": "t3custom",
+  "linuxDesktopEntryBaseName": "t3code-custom",
+  "linuxWmClassBaseName": "t3code-custom",
+  "desktopUserDataDirBaseName": "t3code-custom"
+}

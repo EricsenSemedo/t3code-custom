@@ -51,6 +51,10 @@
     "./projectScripts": {
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"
+    },
+    "./appBranding": {
+      "types": "./src/appBranding.ts",
+      "import": "./src/appBranding.ts"
     }
   },
   "scripts": {

@@ -1,5 +1,6 @@
 import * as OS from "node:os";
 import { Effect, Path } from "effect";
+import { DEFAULT_T3_HOME_DIR_NAME } from "@t3tools/shared/appBranding";
 import { readPathFromLoginShell, resolveLoginShell } from "@t3tools/shared/shell";
 
 export function fixPath(
@@ -38,9 +39,16 @@ export const expandHomePath = Effect.fn(function* (input: string) {
 });
 
 export const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
+  return yield* resolveBaseDirWithDefault(raw, DEFAULT_T3_HOME_DIR_NAME);
+});
+
+export const resolveBaseDirWithDefault = Effect.fn(function* (
+  raw: string | undefined,
+  defaultDirName: string,
+) {
   const { join, resolve } = yield* Path.Path;
   if (!raw || raw.trim().length === 0) {
-    return join(OS.homedir(), ".t3");
+    return join(OS.homedir(), defaultDirName);
   }
   return resolve(yield* expandHomePath(raw.trim()));
 });

@@ -4,6 +4,10 @@ import { homedir } from "node:os";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import {
+  DEFAULT_T3_DESKTOP_DEV_HOME_DIR_NAME,
+  DEFAULT_T3_HOME_DIR_NAME,
+} from "@t3tools/shared/appBranding";
 import { NetService } from "@t3tools/shared/Net";
 import { Config, Data, Effect, Hash, Layer, Logger, Option, Path, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
@@ -15,7 +19,10 @@ const MAX_HASH_OFFSET = 3000;
 const MAX_PORT = 65535;
 
 export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
-  path.join(homedir(), ".t3"),
+  path.join(homedir(), DEFAULT_T3_HOME_DIR_NAME),
+);
+export const DEFAULT_T3_DESKTOP_DEV_HOME = Effect.map(Effect.service(Path.Path), (path) =>
+  path.join(homedir(), DEFAULT_T3_DESKTOP_DEV_HOME_DIR_NAME),
 );
 
 const MODE_ARGS = {
@@ -101,16 +108,25 @@ export function resolveOffset(config: {
   return { offset, source: `hashed T3CODE_DEV_INSTANCE=${seed}` };
 }
 
-function resolveBaseDir(baseDir: string | undefined): Effect.Effect<string, never, Path.Path> {
+function resolveBaseDir(
+  baseDir: string | undefined,
+  defaultDirName: string,
+): Effect.Effect<string, never, Path.Path> {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     const configured = baseDir?.trim();
 
     if (configured) {
+      if (configured === "~") {
+        return homedir();
+      }
+      if (configured.startsWith("~/") || configured.startsWith("~\\")) {
+        return path.join(homedir(), configured.slice(2));
+      }
       return path.resolve(configured);
     }
 
-    return yield* DEFAULT_T3_HOME;
+    return path.join(homedir(), defaultDirName);
   });
 }
 
@@ -146,8 +162,11 @@ export function createDevRunnerEnv({
   return Effect.gen(function* () {
     const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
     const webPort = BASE_WEB_PORT + webOffset;
-    const resolvedBaseDir = yield* resolveBaseDir(t3Home);
     const isDesktopMode = mode === "dev:desktop";
+    const resolvedBaseDir = yield* resolveBaseDir(
+      t3Home,
+      isDesktopMode ? DEFAULT_T3_DESKTOP_DEV_HOME_DIR_NAME : DEFAULT_T3_HOME_DIR_NAME,
+    );
 
     const output: NodeJS.ProcessEnv = {
       ...baseEnv,

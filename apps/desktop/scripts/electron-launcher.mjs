@@ -15,10 +15,11 @@ import {
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import appBranding from "../../../packages/shared/src/appBranding.json" with { type: "json" };
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
-const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
-const APP_BUNDLE_ID = "com.t3tools.t3code";
+const APP_DISPLAY_NAME = `${appBranding.appBaseName} (${isDevelopment ? appBranding.developmentStageLabel : appBranding.productionStageLabel})`;
+const APP_BUNDLE_ID = appBranding.desktopAppId;
 const LAUNCHER_VERSION = 1;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
