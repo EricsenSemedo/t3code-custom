@@ -16,6 +16,7 @@ import {
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import appBranding from "../../../packages/shared/src/appBranding.json" with { type: "json" };
 import { ensureElectronRuntime } from "./ensure-electron-runtime.mjs";
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -25,11 +26,13 @@ const repoRoot = resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-export const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+export const APP_DISPLAY_NAME = `${appBranding.appBaseName} (${isDevelopment ? appBranding.developmentStageLabel : appBranding.productionStageLabel})`;
 export const APP_BUNDLE_ID = isDevelopment
-  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
-  : "com.t3tools.t3code";
-const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
+  ? `${appBranding.desktopAppId}.dev.${devBundleIdSuffix || "local"}`
+  : appBranding.desktopAppId;
+const APP_PROTOCOL_SCHEMES = isDevelopment
+  ? [`${appBranding.desktopScheme}-dev`]
+  : [appBranding.desktopScheme];
 const LAUNCHER_VERSION = 10;
 const defaultIconPath = join(desktopDir, "resources", "icon.icns");
 const developmentMacIconPngPath = join(repoRoot, "assets", "dev", "blueprint-macos-1024.png");

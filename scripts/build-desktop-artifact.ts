@@ -4,6 +4,14 @@ import { fromYaml } from "@t3tools/shared/schemaYaml";
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
+import {
+  APP_BASE_NAME,
+  DESKTOP_APP_ID,
+  DESKTOP_SCHEME,
+  DESKTOP_UPDATE_REPOSITORY,
+  DESKTOP_USER_DATA_DIR_NAME_PRODUCTION,
+  LINUX_WM_CLASS_PRODUCTION,
+} from "@t3tools/shared/appBranding";
 
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
@@ -634,7 +642,7 @@ function resolveGitHubPublishConfig(updateChannel: "latest" | "nightly"):
   const rawRepo =
     process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY?.trim() ||
     process.env.GITHUB_REPOSITORY?.trim() ||
-    "";
+    DESKTOP_UPDATE_REPOSITORY;
   if (!rawRepo) return undefined;
 
   const [owner, repo, ...rest] = rawRepo.split("/");
@@ -675,8 +683,8 @@ export function resolveMockUpdateServerUrl(mockUpdateServerPort: number | undefi
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? `${APP_BASE_NAME} (Nightly)`
+    : (desktopPackageJson.productName ?? `${APP_BASE_NAME} (Alpha)`);
 }
 
 const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -688,9 +696,9 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   mockUpdateServerPort: number | undefined,
 ) {
   const buildConfig: Record<string, unknown> = {
-    appId: "com.t3tools.t3code",
+    appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: "T3-Code-Custom-${version}-${arch}.${ext}",
     directories: {
       buildResources: "apps/desktop/resources",
     },
@@ -715,8 +723,8 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code"],
+          name: APP_BASE_NAME,
+          schemes: [DESKTOP_SCHEME],
         },
       ],
     };
@@ -725,12 +733,12 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      executableName: "t3code",
+      executableName: DESKTOP_USER_DATA_DIR_NAME_PRODUCTION,
       icon: "icons",
       category: "Development",
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: LINUX_WM_CLASS_PRODUCTION,
         },
       },
     };

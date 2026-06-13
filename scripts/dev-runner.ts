@@ -4,6 +4,10 @@ import * as NodeOS from "node:os";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import {
+  DEFAULT_T3_DESKTOP_DEV_HOME_DIR_NAME,
+  DEFAULT_T3_HOME_DIR_NAME,
+} from "@t3tools/shared/appBranding";
 import * as NetService from "@t3tools/shared/Net";
 import * as Config from "effect/Config";
 import * as Data from "effect/Data";
@@ -29,7 +33,7 @@ const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
 const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::1", "::"] as const;
 
 export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
-  path.join(NodeOS.homedir(), ".t3"),
+  path.join(NodeOS.homedir(), DEFAULT_T3_HOME_DIR_NAME),
 );
 
 const MODE_ARGS = {
@@ -161,8 +165,13 @@ export function createDevRunnerEnv({
   return Effect.gen(function* () {
     const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
     const webPort = BASE_WEB_PORT + webOffset;
-    const resolvedBaseDir = yield* resolveBaseDir(t3Home);
     const isDesktopMode = mode === "dev:desktop";
+    const resolvedBaseDir = t3Home?.trim().length
+      ? yield* resolveBaseDir(t3Home)
+      : (yield* Path.Path).join(
+          NodeOS.homedir(),
+          isDesktopMode ? DEFAULT_T3_DESKTOP_DEV_HOME_DIR_NAME : DEFAULT_T3_HOME_DIR_NAME,
+        );
 
     const output: NodeJS.ProcessEnv = {
       ...baseEnv,
