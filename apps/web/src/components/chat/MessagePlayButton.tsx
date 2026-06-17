@@ -41,6 +41,7 @@ export const MessagePlayButton = memo(function MessagePlayButton({
   const { cyclePlaybackRate, play, stop } = useTtsPlayer();
   const status = useAudioPlayerStore((s) => s.status);
   const playingId = useAudioPlayerStore((s) => s.playingMessageId);
+  const errorMessageId = useAudioPlayerStore((s) => s.errorMessageId);
   const error = useAudioPlayerStore((s) => s.error);
   const playbackRate = useAudioPlayerStore((s) => s.playbackRate);
 
@@ -50,12 +51,11 @@ export const MessagePlayButton = memo(function MessagePlayButton({
   const isActive = isLoading || isPlaying;
 
   // Surface the most recent error from any play attempt as an anchored toast,
-  // but only for the button that triggered it (whichever one currently
-  // matches `playingMessageId`). The store clears `error` on the next
+  // but only for the button that triggered it. The store clears `error` on the next
   // setLoading/setPlaying/setIdle, so this fires once per failure.
   useEffect(() => {
     if (error === null || !ref.current) return;
-    if (playingId === null || playingId !== messageId) return;
+    if (errorMessageId !== messageId) return;
     anchoredToastManager.add({
       data: { tooltipStyle: true },
       positionerProps: { anchor: ref.current },
@@ -63,7 +63,7 @@ export const MessagePlayButton = memo(function MessagePlayButton({
       title: "TTS playback failed",
       description: error,
     });
-  }, [error, messageId, playingId]);
+  }, [error, errorMessageId, messageId]);
 
   const Icon = isLoading ? Loader2Icon : isPlaying ? VolumeXIcon : Volume2Icon;
   const label = isActive ? "Stop playback" : "Play with TTS";

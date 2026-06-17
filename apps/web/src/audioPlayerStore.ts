@@ -29,6 +29,7 @@ function nextPlaybackRate(current: TtsPlaybackRate): TtsPlaybackRate {
 interface AudioPlayerState {
   status: AudioPlayerStatus;
   playingMessageId: MessageId | null;
+  errorMessageId: MessageId | null;
   error: string | null;
   playbackRate: TtsPlaybackRate;
 }
@@ -47,21 +48,22 @@ interface AudioPlayerActions {
   setError: (id: MessageId, message: string) => void;
 }
 
-export const useAudioPlayerStore = create<AudioPlayerState & AudioPlayerActions>((set) => ({
+export const useAudioPlayerStore = create<AudioPlayerState & AudioPlayerActions>((set, get) => ({
   status: "idle",
   playingMessageId: null,
+  errorMessageId: null,
   error: null,
   playbackRate: 1,
-  setLoading: (id) => set({ status: "loading", playingMessageId: id, error: null }),
-  setPlaying: (id) => set({ status: "playing", playingMessageId: id, error: null }),
-  setIdle: () => set({ status: "idle", playingMessageId: null, error: null }),
+  setLoading: (id) =>
+    set({ status: "loading", playingMessageId: id, errorMessageId: null, error: null }),
+  setPlaying: (id) =>
+    set({ status: "playing", playingMessageId: id, errorMessageId: null, error: null }),
+  setIdle: () => set({ status: "idle", playingMessageId: null, errorMessageId: null, error: null }),
   cyclePlaybackRate: () => {
-    let next: TtsPlaybackRate = 1;
-    set((state) => {
-      next = nextPlaybackRate(state.playbackRate);
-      return { playbackRate: next };
-    });
+    const next = nextPlaybackRate(get().playbackRate);
+    set({ playbackRate: next });
     return next;
   },
-  setError: (id, message) => set({ status: "idle", playingMessageId: id, error: message }),
+  setError: (id, message) =>
+    set({ status: "idle", playingMessageId: null, errorMessageId: id, error: message }),
 }));

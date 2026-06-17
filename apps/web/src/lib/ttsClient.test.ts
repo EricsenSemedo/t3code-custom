@@ -37,6 +37,14 @@ describe("splitTextForTts", () => {
     );
   });
 
+  it("does not exceed maxChars when punctuation is at the boundary", () => {
+    const text = "abcdefghi,klmnopqrstuvwxyz";
+    const chunks = splitTextForTts(text, 10);
+
+    expect(chunks.every((chunk) => chunk.length <= 10)).toBe(true);
+    expect(chunks.join("")).toBe(text);
+  });
+
   it("normalizes paragraph and line whitespace", () => {
     expect(splitTextForTts("One line.\nWrapped   line.\n\nNext paragraph.", 80)).toEqual([
       "One line.",

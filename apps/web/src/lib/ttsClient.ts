@@ -27,7 +27,7 @@ function splitLongSegment(segment: string, maxChars: number): string[] {
   const chunks: string[] = [];
   let remaining = segment;
   while (remaining.length > maxChars) {
-    const window = remaining.slice(0, maxChars + 1);
+    const window = remaining.slice(0, maxChars);
     const punctuationBoundary = Math.max(
       window.lastIndexOf(","),
       window.lastIndexOf(";"),

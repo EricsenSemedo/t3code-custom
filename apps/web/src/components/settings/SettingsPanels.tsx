@@ -118,6 +118,7 @@ const TIMESTAMP_FORMAT_LABELS = {
 } as const;
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+const TTS_PREVIEW_MESSAGE_ID = MessageId.make("__tts_settings_preview__");
 
 function withoutProviderInstanceKey<V>(
   record: Readonly<Record<ProviderInstanceId, V>> | undefined,
@@ -502,7 +503,7 @@ export function GeneralSettingsPanel() {
   const observability = useServerObservability();
   const serverProviders = useServerProviders();
   const ttsPlayer = useTtsPlayer();
-  const ttsPreviewMessageId = useMemo(() => MessageId.make("__tts_settings_preview__"), []);
+  const ttsPreviewMessageId = TTS_PREVIEW_MESSAGE_ID;
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -517,6 +518,7 @@ export function GeneralSettingsPanel() {
   // surface that lives on each play button isn't reachable from here.
   const ttsPreviewStatus = useAudioPlayerStore((s) => s.status);
   const ttsPreviewPlayingId = useAudioPlayerStore((s) => s.playingMessageId);
+  const ttsPreviewErrorMessageId = useAudioPlayerStore((s) => s.errorMessageId);
   const ttsPreviewError = useAudioPlayerStore((s) => s.error);
   const isTtsPreviewActive = ttsPreviewPlayingId === ttsPreviewMessageId;
   const isTtsPreviewLoading = isTtsPreviewActive && ttsPreviewStatus === "loading";
@@ -524,7 +526,7 @@ export function GeneralSettingsPanel() {
 
   useEffect(() => {
     if (ttsPreviewError === null || ttsPreviewButtonRef.current === null) return;
-    if (ttsPreviewPlayingId !== ttsPreviewMessageId) return;
+    if (ttsPreviewErrorMessageId !== ttsPreviewMessageId) return;
     anchoredToastManager.add({
       data: { tooltipStyle: true },
       positionerProps: { anchor: ttsPreviewButtonRef.current },
@@ -532,7 +534,7 @@ export function GeneralSettingsPanel() {
       title: "TTS playback failed",
       description: ttsPreviewError,
     });
-  }, [ttsPreviewError, ttsPreviewPlayingId, ttsPreviewMessageId]);
+  }, [ttsPreviewError, ttsPreviewErrorMessageId, ttsPreviewMessageId]);
 
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenInstanceId = textGenerationModelSelection.instanceId;

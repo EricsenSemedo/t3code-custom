@@ -53,6 +53,7 @@ afterEach(() => {
   __resetTtsPlayerForTests();
   useAudioPlayerStore.setState({
     error: null,
+    errorMessageId: null,
     playbackRate: 1,
     playingMessageId: null,
     status: "idle",
