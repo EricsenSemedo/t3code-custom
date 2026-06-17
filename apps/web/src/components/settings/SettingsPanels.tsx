@@ -503,7 +503,6 @@ export function GeneralSettingsPanel() {
   const observability = useServerObservability();
   const serverProviders = useServerProviders();
   const ttsPlayer = useTtsPlayer();
-  const ttsPreviewMessageId = TTS_PREVIEW_MESSAGE_ID;
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -516,17 +515,22 @@ export function GeneralSettingsPanel() {
   // no feedback during synthesis/playback and silently swallows errors —
   // there's no `MessagePlayButton` mounted in Settings, so the error toast
   // surface that lives on each play button isn't reachable from here.
-  const ttsPreviewStatus = useAudioPlayerStore((s) => s.status);
-  const ttsPreviewPlayingId = useAudioPlayerStore((s) => s.playingMessageId);
-  const ttsPreviewErrorMessageId = useAudioPlayerStore((s) => s.errorMessageId);
-  const ttsPreviewError = useAudioPlayerStore((s) => s.error);
-  const isTtsPreviewActive = ttsPreviewPlayingId === ttsPreviewMessageId;
+  const { ttsPreviewStatus, ttsPreviewPlayingId, ttsPreviewErrorMessageId, ttsPreviewError } =
+    useAudioPlayerStore(
+      useShallow((s) => ({
+        ttsPreviewStatus: s.status,
+        ttsPreviewPlayingId: s.playingMessageId,
+        ttsPreviewErrorMessageId: s.errorMessageId,
+        ttsPreviewError: s.error,
+      })),
+    );
+  const isTtsPreviewActive = ttsPreviewPlayingId === TTS_PREVIEW_MESSAGE_ID;
   const isTtsPreviewLoading = isTtsPreviewActive && ttsPreviewStatus === "loading";
   const isTtsPreviewPlaying = isTtsPreviewActive && ttsPreviewStatus === "playing";
 
   useEffect(() => {
     if (ttsPreviewError === null || ttsPreviewButtonRef.current === null) return;
-    if (ttsPreviewErrorMessageId !== ttsPreviewMessageId) return;
+    if (ttsPreviewErrorMessageId !== TTS_PREVIEW_MESSAGE_ID) return;
     anchoredToastManager.add({
       data: { tooltipStyle: true },
       positionerProps: { anchor: ttsPreviewButtonRef.current },
@@ -534,7 +538,7 @@ export function GeneralSettingsPanel() {
       title: "TTS playback failed",
       description: ttsPreviewError,
     });
-  }, [ttsPreviewError, ttsPreviewErrorMessageId, ttsPreviewMessageId]);
+  }, [ttsPreviewError, ttsPreviewErrorMessageId]);
 
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenInstanceId = textGenerationModelSelection.instanceId;
@@ -1031,7 +1035,7 @@ export function GeneralSettingsPanel() {
                   } else {
                     void ttsPlayer
                       .play(
-                        ttsPreviewMessageId,
+                        TTS_PREVIEW_MESSAGE_ID,
                         `This is the ${settings.tts.voice} voice. The quick brown fox jumps over the lazy dog.`,
                       )
                       .catch(() => {

@@ -67,6 +67,12 @@ export const TtsClientSettings = Schema.Struct({
 });
 export type TtsClientSettings = typeof TtsClientSettings.Type;
 
+const TtsClientSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  serverUrl: Schema.optionalKey(TrimmedString),
+  voice: Schema.optionalKey(TrimmedString),
+});
+
 export const ClientSettingsSchema = Schema.Struct({
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -558,6 +564,6 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   timestampFormat: Schema.optionalKey(TimestampFormat),
-  tts: Schema.optionalKey(TtsClientSettings),
+  tts: Schema.optionalKey(TtsClientSettingsPatch),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;
