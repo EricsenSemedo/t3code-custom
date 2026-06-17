@@ -46,6 +46,11 @@ vi.mock("@pierre/diffs/react", () => {
   return { FileDiff: MockFileDiff };
 });
 
+vi.mock("~/assets/assetUrls", () => ({
+  useAssetUrl: (_environmentId: EnvironmentId, resource: { path?: string }) =>
+    resource.path ? `/api/assets/test/${encodeURIComponent(resource.path)}` : null,
+}));
+
 function matchMedia() {
   return {
     matches: false,
@@ -127,6 +132,21 @@ function buildUserTimelineEntry(text: string) {
     message: {
       id: MessageId.make("message-1"),
       role: "user" as const,
+      text,
+      createdAt: MESSAGE_CREATED_AT,
+      streaming: false,
+    },
+  };
+}
+
+function buildAssistantTimelineEntry(text: string) {
+  return {
+    id: "entry-assistant",
+    kind: "message" as const,
+    createdAt: MESSAGE_CREATED_AT,
+    message: {
+      id: MessageId.make("message-assistant"),
+      role: "assistant" as const,
       text,
       createdAt: MESSAGE_CREATED_AT,
       streaming: false,
@@ -296,6 +316,42 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("&lt;/review_comment&gt;");
   });
 
+  it("renders file review comments as source code instead of diffs", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-1",
+            kind: "message",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            message: {
+              id: MessageId.make("message-source-comment"),
+              role: "user",
+              text: [
+                '<review_comment sectionId="file:docs/plan.md" sectionTitle="File comment" filePath="docs/plan.md" startIndex="0" endIndex="1" rangeLabel="L1 to L2">',
+                "Clarify this.",
+                "```md",
+                "# Plan",
+                "- Step one",
+                "```",
+                "</review_comment>",
+              ].join("\n"),
+              createdAt: "2026-03-17T19:12:28.000Z",
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("plan.md");
+    expect(markup).toContain("Clarify this.");
+    expect(markup).toContain("# Plan");
+    expect(markup).not.toContain('data-testid="file-diff"');
+  });
+
   it("renders a failure marker for failed tool lifecycle entries", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const markup = renderToStaticMarkup(
@@ -321,5 +377,121 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("lucide-x");
     expect(markup).toContain('aria-label="Tool call failed"');
+  });
+
+  it("renders preview snapshot image output inline in tool rows", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-preview-image",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-preview-image",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "t3-code · preview_snapshot",
+              tone: "tool",
+              itemType: "mcp_tool_call",
+              toolTitle: "t3-code · preview_snapshot",
+              toolData: {
+                type: "mcpToolCall",
+                id: "mcp-preview-snapshot",
+                server: "t3-code",
+                tool: "preview_snapshot",
+                status: "completed",
+                result: {
+                  content: [
+                    { type: "text", text: "{}" },
+                    { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+                  ],
+                },
+              },
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-tool-media-output="image"');
+    expect(markup).toContain('src="data:image/png;base64,iVBORw0KGgo="');
+    expect(markup).toContain('alt="Screenshot"');
+  });
+
+  it("renders preview recording artifacts inline as videos", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const artifactPath = "/tmp/t3/dev/browser-artifacts/browser-recording-test.webm";
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-preview-recording",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-preview-recording",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "t3-code · preview_recording_stop",
+              tone: "tool",
+              itemType: "mcp_tool_call",
+              toolTitle: "t3-code · preview_recording_stop",
+              toolData: {
+                type: "mcpToolCall",
+                id: "mcp-preview-recording",
+                server: "t3-code",
+                tool: "preview_recording_stop",
+                status: "completed",
+                result: {
+                  id: "browser-recording-test",
+                  path: artifactPath,
+                  mimeType: "video/webm",
+                  sizeBytes: 1024,
+                  createdAt: "2026-03-17T19:12:28.000Z",
+                },
+              },
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-tool-media-output="video"');
+    expect(markup).toContain("<video");
+    expect(markup).toContain(encodeURIComponent(artifactPath));
+    expect(markup).toContain("browser-recording-test.webm");
+  });
+
+  it("renders assistant markdown links to local media files inline", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const imagePath = "/home/ericsens/projects/toonsync/artifacts/browser-captures/toonsync.png";
+    const videoPath =
+      "/home/ericsens/projects/toonsync/artifacts/browser-captures/toonsync-clickthrough.webm";
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        markdownCwd="/home/ericsens/projects/toonsync"
+        timelineEntries={[
+          buildAssistantTimelineEntry(
+            [
+              "Screenshot:",
+              `[toonsync.png](${imagePath})`,
+              "",
+              "Recording:",
+              `[toonsync-clickthrough.webm](${videoPath})`,
+            ].join("\n"),
+          ),
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-tool-media-output="image"');
+    expect(markup).toContain('data-tool-media-output="video"');
+    expect(markup).toContain("<img");
+    expect(markup).toContain("<video");
+    expect(markup).toContain(encodeURIComponent(imagePath));
+    expect(markup).toContain(encodeURIComponent(videoPath));
   });
 });

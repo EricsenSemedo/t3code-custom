@@ -1,0 +1,158 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      upstream_repository:
+        description: "Upstream repository in owner/repo format"
+        required: false
+        type: string
+      upstream_branch:
+        description: "Upstream branch to sync from"
+        required: false
+        default: "main"
+        type: string
+      strategy:
+        description: "Sync strategy"
+        required: false
+        default: "merge"
+        type: choice
+        options:
+          - merge
+          - rebase
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Open upstream sync PR
+    runs-on: ubuntu-24.04
+    steps:
+      - id: app_token
+        if: ${{ secrets.SYNC_APP_ID != '' && secrets.SYNC_APP_PRIVATE_KEY != '' }}
+        name: Mint sync app token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app_token.outputs.token || github.token }}
+          fetch-depth: 0
+
+      - name: Resolve sync settings
+        id: settings
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          upstream_repository="${{ github.event.inputs.upstream_repository }}"
+          if [[ -z "$upstream_repository" ]]; then
+            upstream_repository="${{ vars.T3CODE_UPSTREAM_REPOSITORY }}"
+          fi
+          if [[ -z "$upstream_repository" ]]; then
+            echo "Missing upstream repository. Set repo variable T3CODE_UPSTREAM_REPOSITORY or pass workflow input upstream_repository." >&2
+            exit 1
+          fi
+
+          upstream_branch="${{ github.event.inputs.upstream_branch }}"
+          if [[ -z "$upstream_branch" ]]; then
+            upstream_branch="${{ vars.T3CODE_UPSTREAM_BRANCH }}"
+          fi
+          if [[ -z "$upstream_branch" ]]; then
+            upstream_branch="main"
+          fi
+
+          strategy="${{ github.event.inputs.strategy }}"
+          if [[ -z "$strategy" ]]; then
+            strategy="${{ vars.T3CODE_UPSTREAM_SYNC_STRATEGY }}"
+          fi
+          if [[ -z "$strategy" ]]; then
+            strategy="merge"
+          fi
+
+          echo "upstream_repository=$upstream_repository" >> "$GITHUB_OUTPUT"
+          echo "upstream_branch=$upstream_branch" >> "$GITHUB_OUTPUT"
+          echo "strategy=$strategy" >> "$GITHUB_OUTPUT"
+
+      - name: Sync upstream into bot branch
+        id: sync
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token || github.token }}
+          UPSTREAM_REPOSITORY: ${{ steps.settings.outputs.upstream_repository }}
+          UPSTREAM_BRANCH: ${{ steps.settings.outputs.upstream_branch }}
+          SYNC_STRATEGY: ${{ steps.settings.outputs.strategy }}
+        run: |
+          set -euo pipefail
+
+          sync_branch="bot/upstream-sync"
+          upstream_url="https://github.com/${UPSTREAM_REPOSITORY}.git"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote remove upstream-sync 2>/dev/null || true
+          git remote add upstream-sync "$upstream_url"
+          git fetch origin main
+          git fetch upstream-sync "$UPSTREAM_BRANCH"
+
+          git checkout -B "$sync_branch" origin/main
+
+          if [[ "$SYNC_STRATEGY" == "rebase" ]]; then
+            git rebase "upstream-sync/$UPSTREAM_BRANCH"
+          else
+            git merge --no-edit --no-ff "upstream-sync/$UPSTREAM_BRANCH"
+          fi
+
+          if git diff --quiet origin/main...HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git push --force-with-lease origin "$sync_branch"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "sync_branch=$sync_branch" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update sync PR
+        if: steps.sync.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token || github.token }}
+          UPSTREAM_REPOSITORY: ${{ steps.settings.outputs.upstream_repository }}
+          UPSTREAM_BRANCH: ${{ steps.settings.outputs.upstream_branch }}
+          SYNC_STRATEGY: ${{ steps.settings.outputs.strategy }}
+          SYNC_BRANCH: ${{ steps.sync.outputs.sync_branch }}
+        run: |
+          set -euo pipefail
+
+          title="chore(sync): pull ${UPSTREAM_REPOSITORY}@${UPSTREAM_BRANCH}"
+          body="$(cat <<EOF
+          Automated upstream sync PR.
+
+          - Upstream: \`${UPSTREAM_REPOSITORY}\`
+          - Branch: \`${UPSTREAM_BRANCH}\`
+          - Strategy: \`${SYNC_STRATEGY}\`
+
+          This PR is managed by \`.github/workflows/sync-upstream.yml\`.
+          EOF
+          )"
+
+          existing_pr="$(gh pr list --head "$SYNC_BRANCH" --base main --json number --jq '.[0].number // empty')"
+          if [[ -n "$existing_pr" ]]; then
+            gh pr edit "$existing_pr" --title "$title" --body "$body"
+            exit 0
+          fi
+
+          gh pr create --base main --head "$SYNC_BRANCH" --title "$title" --body "$body"

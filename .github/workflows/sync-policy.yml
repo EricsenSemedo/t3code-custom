@@ -1,0 +1,105 @@
+name: Sync Policy
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  policy:
+    name: Apply sync policy
+    if: ${{ startsWith(github.event.pull_request.head.ref, 'bot/upstream-sync') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Collect changed files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > changed-files.txt
+
+      - name: Classify sync PR
+        id: classify
+        run: node scripts/sync-policy.ts --files-file changed-files.txt --github-output
+
+      - name: Sync labels
+        uses: actions/github-script@v8
+        env:
+          DESIRED_LABELS: ${{ steps.classify.outputs.labels }}
+          SUMMARY: ${{ steps.classify.outputs.summary }}
+        with:
+          script: |
+            const desired = (process.env.DESIRED_LABELS ?? "").split(",").map((label) => label.trim()).filter(Boolean);
+            const managed = ["upstream-sync", "automerge-safe", "needs-human-review", "agent-fix-allowed"];
+            const labelDefinitions = {
+              "upstream-sync": { color: "1d76db", description: "Automated upstream sync PR." },
+              "automerge-safe": { color: "0e8a16", description: "Eligible for auto-merge after required checks pass." },
+              "needs-human-review": { color: "b60205", description: "Touches protected paths and requires human review." },
+              "agent-fix-allowed": { color: "5319e7", description: "Safe to let bounded automation repair narrow CI failures." },
+            };
+
+            for (const [name, details] of Object.entries(labelDefinitions)) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                });
+              } catch (error) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                  color: details.color,
+                  description: details.description,
+                });
+              }
+            }
+
+            const issueNumber = context.payload.pull_request.number;
+            const currentLabels = context.payload.pull_request.labels.map((label) => label.name);
+            const toAdd = desired.filter((label) => !currentLabels.includes(label));
+            const toRemove = currentLabels.filter((label) => managed.includes(label) && !desired.includes(label));
+
+            for (const label of toAdd) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: [label],
+              });
+            }
+
+            for (const label of toRemove) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                name: label,
+              }).catch(() => undefined);
+            }
+
+            core.summary.addHeading("Sync policy").addRaw(process.env.SUMMARY ?? "").write();
+
+      - name: Enable auto-merge
+        if: ${{ steps.classify.outputs.auto_merge_allowed == 'true' && steps.classify.outputs.human_review_needed != 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr merge "$PR_NUMBER" --auto --squash
