@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { MessageId } from "@t3tools/contracts";
 import { useAudioPlayerStore } from "~/audioPlayerStore";
-import { __resetTtsPlayerForTests, startPlayback } from "./useTtsPlayer";
+import { __resetTtsPlayerForTests, cycleTtsPlaybackRate, startPlayback } from "./useTtsPlayer";
 
 class Deferred<T> {
   promise: Promise<T>;
@@ -18,6 +18,7 @@ class Deferred<T> {
 
 class FakeAudio {
   src = "";
+  playbackRate = 1;
   readonly play = vi.fn(async () => {
     setTimeout(() => this.dispatch("ended"), 0);
   });
@@ -50,7 +51,12 @@ class FakeAudio {
 
 afterEach(() => {
   __resetTtsPlayerForTests();
-  useAudioPlayerStore.setState({ status: "idle", playingMessageId: null, error: null });
+  useAudioPlayerStore.setState({
+    error: null,
+    playbackRate: 1,
+    playingMessageId: null,
+    status: "idle",
+  });
   vi.unstubAllGlobals();
 });
 
@@ -106,5 +112,37 @@ describe("startPlayback", () => {
     await playback;
     expect(fakeAudio.play).toHaveBeenCalledTimes(2);
     expect(useAudioPlayerStore.getState().status).toBe("idle");
+  });
+
+  it("applies the selected playback rate to synthesized chunks", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(new Blob(["first"], { type: "audio/mpeg" }), {
+          status: 200,
+        }),
+    );
+    const fakeAudio = new FakeAudio();
+
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "Audio",
+      vi.fn(function Audio() {
+        return fakeAudio;
+      }),
+    );
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:tts"),
+      revokeObjectURL: vi.fn(),
+    });
+
+    cycleTtsPlaybackRate();
+    expect(useAudioPlayerStore.getState().playbackRate).toBe(1.5);
+
+    await startPlayback(MessageId.make("assistant-1"), "First sentence.", {
+      voice: "af_bella",
+      serverUrl: "http://127.0.0.1:8880",
+    });
+
+    expect(fakeAudio.playbackRate).toBe(1.5);
   });
 });

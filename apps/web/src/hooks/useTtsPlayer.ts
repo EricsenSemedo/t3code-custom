@@ -39,6 +39,7 @@ function ensureAudioElement(): HTMLAudioElement {
   if (audioElement === null) {
     audioElement = new Audio();
   }
+  audioElement.playbackRate = useAudioPlayerStore.getState().playbackRate;
   return audioElement;
 }
 
@@ -61,6 +62,13 @@ export function stopPlayback(): void {
   teardownSession(currentSession);
   currentSession = null;
   useAudioPlayerStore.getState().setIdle();
+}
+
+export function cycleTtsPlaybackRate(): void {
+  const rate = useAudioPlayerStore.getState().cyclePlaybackRate();
+  if (audioElement !== null) {
+    audioElement.playbackRate = rate;
+  }
 }
 
 export interface PlayOptions {
@@ -178,6 +186,7 @@ async function playSession(session: PlaybackSession, options: PlayOptions): Prom
 
     const audio = ensureAudioElement();
     audio.src = url;
+    audio.playbackRate = useAudioPlayerStore.getState().playbackRate;
     try {
       await audio.play();
     } catch (error) {
@@ -240,6 +249,7 @@ export function useTtsPlayer() {
   );
 
   return {
+    cyclePlaybackRate: cycleTtsPlaybackRate,
     play,
     stop: stopPlayback,
   };

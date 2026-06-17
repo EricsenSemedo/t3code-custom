@@ -38,10 +38,11 @@ export const MessagePlayButton = memo(function MessagePlayButton({
   className?: string;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
-  const { play, stop } = useTtsPlayer();
+  const { cyclePlaybackRate, play, stop } = useTtsPlayer();
   const status = useAudioPlayerStore((s) => s.status);
   const playingId = useAudioPlayerStore((s) => s.playingMessageId);
   const error = useAudioPlayerStore((s) => s.error);
+  const playbackRate = useAudioPlayerStore((s) => s.playbackRate);
 
   const isThis = playingId === messageId;
   const isLoading = isThis && status === "loading";
@@ -77,28 +78,50 @@ export const MessagePlayButton = memo(function MessagePlayButton({
       // Error already surfaced via the store + effect above.
     });
   };
+  const speedLabel = `${playbackRate}x`;
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            aria-label={label}
-            disabled={trimmed.length === 0}
-            onClick={handleClick}
-            ref={ref}
-            type="button"
-            size={size}
-            variant={variant}
-            className={cn(className)}
-          />
-        }
-      >
-        <Icon className={cn("size-3", isLoading && "animate-spin")} />
-      </TooltipTrigger>
-      <TooltipPopup>
-        <p>{label}</p>
-      </TooltipPopup>
-    </Tooltip>
+    <span className="inline-flex items-center gap-0.5">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              aria-label="Change TTS speed"
+              onClick={cyclePlaybackRate}
+              type="button"
+              size="xs"
+              variant={variant}
+              className="min-w-8 px-1 text-[10px] tabular-nums"
+            />
+          }
+        >
+          {speedLabel}
+        </TooltipTrigger>
+        <TooltipPopup>
+          <p>Change TTS speed</p>
+        </TooltipPopup>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              aria-label={label}
+              disabled={trimmed.length === 0}
+              onClick={handleClick}
+              ref={ref}
+              type="button"
+              size={size}
+              variant={variant}
+              className={cn(className)}
+            />
+          }
+        >
+          <Icon className={cn("size-3", isLoading && "animate-spin")} />
+        </TooltipTrigger>
+        <TooltipPopup>
+          <p>{label}</p>
+        </TooltipPopup>
+      </Tooltip>
+    </span>
   );
 });

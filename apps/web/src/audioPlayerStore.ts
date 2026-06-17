@@ -13,17 +13,27 @@ import { type MessageId } from "@t3tools/contracts";
  */
 
 export type AudioPlayerStatus = "idle" | "loading" | "playing";
+export type TtsPlaybackRate = 1 | 1.5 | 2;
+
+const PLAYBACK_RATES: readonly TtsPlaybackRate[] = [1, 1.5, 2];
+
+function nextPlaybackRate(current: TtsPlaybackRate): TtsPlaybackRate {
+  const index = PLAYBACK_RATES.indexOf(current);
+  return PLAYBACK_RATES[(index + 1) % PLAYBACK_RATES.length] ?? 1;
+}
 
 interface AudioPlayerState {
   status: AudioPlayerStatus;
   playingMessageId: MessageId | null;
   error: string | null;
+  playbackRate: TtsPlaybackRate;
 }
 
 interface AudioPlayerActions {
   setLoading: (id: MessageId) => void;
   setPlaying: (id: MessageId) => void;
   setIdle: () => void;
+  cyclePlaybackRate: () => TtsPlaybackRate;
   /**
    * Mark playback as failed. `id` must be the message that triggered the
    * failed request — `MessagePlayButton` uses it to attribute the anchored
@@ -37,8 +47,17 @@ export const useAudioPlayerStore = create<AudioPlayerState & AudioPlayerActions>
   status: "idle",
   playingMessageId: null,
   error: null,
+  playbackRate: 1,
   setLoading: (id) => set({ status: "loading", playingMessageId: id, error: null }),
   setPlaying: (id) => set({ status: "playing", playingMessageId: id, error: null }),
   setIdle: () => set({ status: "idle", playingMessageId: null }),
+  cyclePlaybackRate: () => {
+    let next: TtsPlaybackRate = 1;
+    set((state) => {
+      next = nextPlaybackRate(state.playbackRate);
+      return { playbackRate: next };
+    });
+    return next;
+  },
   setError: (id, message) => set({ status: "idle", playingMessageId: id, error: message }),
 }));
