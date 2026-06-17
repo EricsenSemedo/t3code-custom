@@ -32,7 +32,7 @@ export const MessagePlayButton = memo(function MessagePlayButton({
   className,
 }: {
   messageId: MessageId;
-  text: string;
+  text: string | null;
   size?: "xs" | "icon-xs";
   variant?: "outline" | "ghost";
   className?: string;
@@ -55,7 +55,7 @@ export const MessagePlayButton = memo(function MessagePlayButton({
   // setLoading/setPlaying/setIdle, so this fires once per failure.
   useEffect(() => {
     if (error === null || !ref.current) return;
-    if (playingId !== null && playingId !== messageId) return;
+    if (playingId === null || playingId !== messageId) return;
     anchoredToastManager.add({
       data: { tooltipStyle: true },
       positionerProps: { anchor: ref.current },
@@ -67,7 +67,7 @@ export const MessagePlayButton = memo(function MessagePlayButton({
 
   const Icon = isLoading ? Loader2Icon : isPlaying ? VolumeXIcon : Volume2Icon;
   const label = isActive ? "Stop playback" : "Play with TTS";
-  const trimmed = text.trim();
+  const trimmed = text?.trim() ?? "";
 
   const handleClick = () => {
     if (isActive) {

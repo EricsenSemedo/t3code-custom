@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { splitTextForTts, synthesizeSpeech } from "./ttsClient";
+import { splitTextForTts, synthesizeSpeech, TtsServerError } from "./ttsClient";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -84,5 +84,77 @@ describe("synthesizeSpeech", () => {
         }),
       }),
     );
+  });
+
+  it("throws TtsServerError with response details for non-ok responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("synthesis failed", {
+            status: 500,
+            statusText: "Internal Server Error",
+          }),
+      ),
+    );
+
+    await expect(
+      synthesizeSpeech({
+        text: "Hello.",
+        voice: "af_bella",
+        serverUrl: "http://127.0.0.1:8880",
+      }),
+    ).rejects.toMatchObject({
+      detail: "synthesis failed",
+      name: "TtsServerError",
+      status: 500,
+      statusText: "Internal Server Error",
+    } satisfies Partial<TtsServerError>);
+  });
+
+  it("forwards an AbortSignal to fetch", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(new Blob(["audio"], { type: "audio/mpeg" }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await synthesizeSpeech({
+      text: "Hello.",
+      voice: "af_bella",
+      serverUrl: "http://127.0.0.1:8880",
+      signal: controller.signal,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+
+  it("accepts server URLs with or without the /v1 suffix", async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(new Blob(["audio"], { type: "audio/mpeg" }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await synthesizeSpeech({
+      text: "Root URL.",
+      voice: "af_bella",
+      serverUrl: "http://127.0.0.1:8880",
+    });
+    await synthesizeSpeech({
+      text: "Versioned URL.",
+      voice: "af_bella",
+      serverUrl: "http://127.0.0.1:8880/v1/",
+    });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:8880/v1/audio/speech",
+      "http://127.0.0.1:8880/v1/audio/speech",
+    ]);
   });
 });

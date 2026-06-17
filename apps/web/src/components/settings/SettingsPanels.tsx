@@ -67,7 +67,6 @@ import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTime, formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
-import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { anchoredToastManager, stackedThreadToast, toastManager } from "../ui/toast";
@@ -978,12 +977,10 @@ export function GeneralSettingsPanel() {
             ) : null
           }
           control={
-            <Input
+            <DraftInput
               className="w-full sm:w-72"
               value={settings.tts.serverUrl}
-              onChange={(event) =>
-                updateSettings({ tts: { ...settings.tts, serverUrl: event.target.value } })
-              }
+              onCommit={(serverUrl) => updateSettings({ tts: { ...settings.tts, serverUrl } })}
               placeholder={DEFAULT_TTS_SERVER_URL}
               spellCheck={false}
               aria-label="TTS server URL"
@@ -1008,12 +1005,10 @@ export function GeneralSettingsPanel() {
           }
           control={
             <div className="flex w-full flex-wrap items-center justify-end gap-1.5 sm:w-auto">
-              <Input
+              <DraftInput
                 className="w-full sm:w-44"
                 value={settings.tts.voice}
-                onChange={(event) =>
-                  updateSettings({ tts: { ...settings.tts, voice: event.target.value } })
-                }
+                onCommit={(voice) => updateSettings({ tts: { ...settings.tts, voice } })}
                 placeholder={DEFAULT_TTS_VOICE}
                 spellCheck={false}
                 aria-label="TTS voice"
@@ -1023,19 +1018,25 @@ export function GeneralSettingsPanel() {
                 size="xs"
                 variant="outline"
                 disabled={
-                  settings.tts.voice.trim().length === 0 ||
-                  settings.tts.serverUrl.trim().length === 0
+                  isTtsPreviewActive
+                    ? false
+                    : settings.tts.voice.trim().length === 0 ||
+                      settings.tts.serverUrl.trim().length === 0
                 }
                 onClick={() => {
-                  void ttsPlayer
-                    .play(
-                      ttsPreviewMessageId,
-                      `This is the ${settings.tts.voice} voice. The quick brown fox jumps over the lazy dog.`,
-                    )
-                    .catch(() => {
-                      // Errors surface via the audioPlayerStore + the
-                      // anchored-toast effect above.
-                    });
+                  if (isTtsPreviewActive) {
+                    ttsPlayer.stop();
+                  } else {
+                    void ttsPlayer
+                      .play(
+                        ttsPreviewMessageId,
+                        `This is the ${settings.tts.voice} voice. The quick brown fox jumps over the lazy dog.`,
+                      )
+                      .catch(() => {
+                        // Errors surface via the audioPlayerStore + the
+                        // anchored-toast effect above.
+                      });
+                  }
                 }}
                 aria-label={isTtsPreviewActive ? "Stop TTS preview" : "Play TTS preview"}
               >

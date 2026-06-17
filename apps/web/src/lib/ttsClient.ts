@@ -33,10 +33,7 @@ function splitLongSegment(segment: string, maxChars: number): string[] {
       window.lastIndexOf(";"),
       window.lastIndexOf(":"),
     );
-    const boundary =
-      punctuationBoundary >= 0
-        ? punctuationBoundary
-        : window.slice(0, maxChars + 1).lastIndexOf(" ");
+    const boundary = punctuationBoundary >= 0 ? punctuationBoundary : window.lastIndexOf(" ");
     const splitAt = boundary > maxChars * 0.5 ? boundary + 1 : maxChars;
     chunks.push(remaining.slice(0, splitAt).trim());
     remaining = remaining.slice(splitAt).trim();

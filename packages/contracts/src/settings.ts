@@ -131,18 +131,6 @@ export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientS
 export const ThreadEnvMode = Schema.Literals(["local", "worktree"]);
 export type ThreadEnvMode = typeof ThreadEnvMode.Type;
 
-const makeBinaryPathSetting = (fallback: string) =>
-  TrimmedString.pipe(
-    Schema.decodeTo(
-      Schema.String,
-      SchemaTransformation.transformOrFail({
-        decode: (value) => Effect.succeed(value || fallback),
-        encode: (value) => Effect.succeed(value),
-      }),
-    ),
-    Schema.withDecodingDefault(Effect.succeed(fallback)),
-  );
-
 export type ProviderSettingsFormControl = "text" | "password" | "textarea" | "switch";
 
 export interface ProviderSettingsFormAnnotation {
@@ -190,7 +178,7 @@ export const CodexSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    binaryPath: makeBinaryPathSetting("codex").pipe(
+    binaryPath: makeStringWithFallback("codex").pipe(
       Schema.annotateKey({
         title: "Binary path",
         description: "Path to the Codex binary used by this instance.",
@@ -237,7 +225,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    binaryPath: makeBinaryPathSetting("claude").pipe(
+    binaryPath: makeStringWithFallback("claude").pipe(
       Schema.annotateKey({
         title: "Binary path",
         description: "Path to the Claude binary used by this instance.",
@@ -281,7 +269,7 @@ export const CursorSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(false)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    binaryPath: makeBinaryPathSetting("agent").pipe(
+    binaryPath: makeStringWithFallback("agent").pipe(
       Schema.annotateKey({
         title: "Binary path",
         description: "Path to the Cursor agent binary.",
@@ -316,7 +304,7 @@ export const GrokSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    binaryPath: makeBinaryPathSetting("grok").pipe(
+    binaryPath: makeStringWithFallback("grok").pipe(
       Schema.annotateKey({
         title: "Binary path",
         description: "Path to the Grok CLI binary.",
@@ -340,7 +328,7 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    binaryPath: makeBinaryPathSetting("opencode").pipe(
+    binaryPath: makeStringWithFallback("opencode").pipe(
       Schema.annotateKey({
         title: "Binary path",
         description: "Path to the OpenCode binary.",
@@ -570,5 +558,6 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   timestampFormat: Schema.optionalKey(TimestampFormat),
+  tts: Schema.optionalKey(TtsClientSettings),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

@@ -15,11 +15,15 @@ import { type MessageId } from "@t3tools/contracts";
 export type AudioPlayerStatus = "idle" | "loading" | "playing";
 export type TtsPlaybackRate = 1 | 1.5 | 2;
 
-const PLAYBACK_RATES: readonly TtsPlaybackRate[] = [1, 1.5, 2];
-
 function nextPlaybackRate(current: TtsPlaybackRate): TtsPlaybackRate {
-  const index = PLAYBACK_RATES.indexOf(current);
-  return PLAYBACK_RATES[(index + 1) % PLAYBACK_RATES.length] ?? 1;
+  switch (current) {
+    case 1:
+      return 1.5;
+    case 1.5:
+      return 2;
+    case 2:
+      return 1;
+  }
 }
 
 interface AudioPlayerState {
@@ -50,7 +54,7 @@ export const useAudioPlayerStore = create<AudioPlayerState & AudioPlayerActions>
   playbackRate: 1,
   setLoading: (id) => set({ status: "loading", playingMessageId: id, error: null }),
   setPlaying: (id) => set({ status: "playing", playingMessageId: id, error: null }),
-  setIdle: () => set({ status: "idle", playingMessageId: null }),
+  setIdle: () => set({ status: "idle", playingMessageId: null, error: null }),
   cyclePlaybackRate: () => {
     let next: TtsPlaybackRate = 1;
     set((state) => {

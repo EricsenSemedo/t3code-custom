@@ -16,7 +16,7 @@ import { useSettings } from "./useSettings";
 import { useAudioPlayerStore } from "~/audioPlayerStore";
 import { splitTextForTts, synthesizeSpeech } from "~/lib/ttsClient";
 
-const PREFETCH_AHEAD_CHUNKS = 2;
+const PREFETCH_WINDOW_SIZE = 2;
 
 let audioElement: HTMLAudioElement | null = null;
 
@@ -160,7 +160,7 @@ function prefetchChunks(
 ): void {
   for (
     let index = currentIndex;
-    index < Math.min(session.chunks.length, currentIndex + PREFETCH_AHEAD_CHUNKS);
+    index < Math.min(session.chunks.length, currentIndex + PREFETCH_WINDOW_SIZE);
     index += 1
   ) {
     void ensureChunkUrl(session, index, options);
