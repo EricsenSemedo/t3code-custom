@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
+import * as NodeOS from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import appBranding from "../../../packages/shared/src/appBranding.json" with { type: "json" };
@@ -33,9 +34,11 @@ export const APP_BUNDLE_ID = isDevelopment
 const APP_PROTOCOL_SCHEMES = isDevelopment
   ? [`${appBranding.desktopScheme}-dev`]
   : [appBranding.desktopScheme];
-const LAUNCHER_VERSION = 10;
+const LAUNCHER_VERSION = 11;
 const defaultIconPath = join(desktopDir, "resources", "icon.icns");
 const developmentMacIconPngPath = join(repoRoot, "assets", "dev", "blueprint-macos-1024.png");
+// oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
+const hostPlatform = NodeOS.platform();
 
 function resolveDevelopmentProtocolCallbackPort() {
   const configuredPort = Number.parseInt(process.env.T3CODE_PORT ?? "", 10);
@@ -119,14 +122,14 @@ function writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath) {
       ...envEntries.map(([name, value]) => `export ${name}=${shellSingleQuote(value)}`),
       'for arg in "$@"; do',
       '  case "$arg" in',
-      "    t3code-dev://auth/callback*)",
+      `    ${appBranding.desktopScheme}-dev://auth/callback*)`,
       '      if [ -n "$T3CODE_DESKTOP_PROTOCOL_CALLBACK_URL" ]; then',
       '        /usr/bin/curl -fsS --max-time 2 -X POST --data-binary "$arg" "$T3CODE_DESKTOP_PROTOCOL_CALLBACK_URL" >/dev/null 2>&1 && exit 0',
       "      fi",
       "      ;;",
       "  esac",
       "done",
-      `exec ${shellSingleQuote(electronBinaryPath)} --t3code-dev-root=${shellSingleQuote(desktopDir)} ${shellSingleQuote(mainEntryPath)} "$@"`,
+      `exec ${shellSingleQuote(electronBinaryPath)} --${appBranding.desktopScheme}-dev-root=${shellSingleQuote(desktopDir)} ${shellSingleQuote(mainEntryPath)} "$@"`,
       "",
     ].join("\n"),
   );
@@ -298,7 +301,11 @@ function buildMacLauncher(electronBinaryPath) {
   }
 
   rmSync(targetAppBundlePath, { recursive: true, force: true });
-  cpSync(sourceAppBundlePath, targetAppBundlePath, { recursive: true });
+  // verbatimSymlinks keeps the framework's relative symlinks intact
+  // (e.g. Resources -> Versions/Current/Resources). Without it cpSync
+  // rewrites them to absolute paths into node_modules, which escape the
+  // bundle and crash sandboxed helper processes (icudtl.dat not found).
+  cpSync(sourceAppBundlePath, targetAppBundlePath, { recursive: true, verbatimSymlinks: true });
   patchMainBundleInfoPlist(targetAppBundlePath, iconPath);
   patchHelperBundleInfoPlists(targetAppBundlePath);
   if (isDevelopment) {
@@ -310,21 +317,54 @@ function buildMacLauncher(electronBinaryPath) {
   return targetBinaryPath;
 }
 
+function isLinuxSetuidSandboxConfigured(electronBinaryPath) {
+  if (hostPlatform !== "linux") {
+    return true;
+  }
+
+  const sandboxPath = join(dirname(electronBinaryPath), "chrome-sandbox");
+  try {
+    const sandboxStat = statSync(sandboxPath);
+    return sandboxStat.uid === 0 && (sandboxStat.mode & 0o4777) === 0o4755;
+  } catch {
+    return false;
+  }
+}
+
+function resolveLinuxSandboxArgs(electronBinaryPath) {
+  if (isLinuxSetuidSandboxConfigured(electronBinaryPath)) {
+    return [];
+  }
+
+  console.warn(
+    "[desktop-launcher] Electron chrome-sandbox is not root-owned with mode 4755; launching local Electron with --no-sandbox.",
+  );
+  return ["--no-sandbox"];
+}
+
 export function resolveElectronPath() {
   ensureElectronRuntime();
 
   const require = createRequire(import.meta.url);
   const electronBinaryPath = require("electron");
 
-  if (process.platform !== "darwin") {
+  if (hostPlatform !== "darwin") {
     return electronBinaryPath;
   }
 
   return buildMacLauncher(electronBinaryPath);
 }
 
+export function resolveElectronLaunchCommand(args = []) {
+  const electronPath = resolveElectronPath();
+  return {
+    electronPath,
+    args: [...resolveLinuxSandboxArgs(electronPath), ...args],
+  };
+}
+
 export function resolveDevProtocolClient() {
-  if (process.platform !== "darwin" || !isDevelopment) {
+  if (hostPlatform !== "darwin" || !isDevelopment) {
     return null;
   }
 
