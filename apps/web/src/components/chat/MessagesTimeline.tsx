@@ -1,4 +1,5 @@
 import {
+  type AssetResource,
   type EnvironmentId,
   type MessageId,
   type ScopedThreadRef,
@@ -76,6 +77,7 @@ import {
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useAssetUrl } from "~/assets/assetUrls";
 import {
   deriveDisplayedUserMessageState,
   type ParsedTerminalContextEntry,
@@ -88,6 +90,7 @@ import {
   extractTrailingPreviewAnnotation,
   type ParsedPreviewAnnotation,
 } from "~/lib/previewAnnotation";
+import { resolveMarkdownFileLinkMeta } from "~/markdown-links";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
@@ -582,6 +585,17 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const mediaOutputs = useMemo(
+    () =>
+      row.message.streaming
+        ? []
+        : extractAssistantMessageMediaOutputs({
+            text: messageText,
+            cwd: ctx.markdownCwd,
+            threadRef: ctx.threadRef,
+          }),
+    [ctx.markdownCwd, ctx.threadRef, messageText, row.message.streaming],
+  );
 
   return (
     <>
@@ -593,6 +607,17 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           isStreaming={Boolean(row.message.streaming)}
           skills={ctx.skills}
         />
+        {mediaOutputs.length > 0 ? (
+          <div className="mt-2 grid max-w-xl gap-2">
+            {mediaOutputs.map((output) => (
+              <InlineToolMediaOutputCard
+                key={output.id}
+                output={output}
+                environmentId={ctx.activeThreadEnvironmentId}
+              />
+            ))}
+          </div>
+        ) : null}
         <AssistantChangedFilesSection
           turnSummary={row.assistantTurnDiffSummary}
           routeThreadKey={ctx.routeThreadKey}
@@ -1545,11 +1570,232 @@ function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
 
 const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
+interface InlineToolMediaOutput {
+  readonly id: string;
+  readonly kind: "image" | "video";
+  readonly mimeType: string;
+  readonly label: string;
+  readonly src?: string;
+  readonly resource?: AssetResource;
+  readonly path?: string;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asArray(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function basenameFromPath(value: string): string {
+  const normalized = value.replace(/\\/g, "/");
+  const segments = normalized.split("/");
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    const segment = segments[index];
+    if (segment) return segment;
+  }
+  return value;
+}
+
+function dataUrlFromMcpImageContent(content: Record<string, unknown>): string | null {
+  const mimeType = asNonEmptyString(content.mimeType) ?? asNonEmptyString(content.mime_type);
+  if (!mimeType?.startsWith("image/")) return null;
+  const data = content.data;
+  if (typeof data === "string" && data.length > 0) {
+    if (data.startsWith("data:")) return data;
+    return `data:${mimeType};base64,${data}`;
+  }
+  return null;
+}
+
+function mediaKindFromMimeType(mimeType: string): "image" | "video" | null {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  return null;
+}
+
+const MARKDOWN_LINK_PATTERN = /!?\[([^\]\n]*)\]\(([^)\n]+)\)/g;
+const MEDIA_EXTENSION_MIME_TYPES = new Map<string, string>([
+  [".avif", "image/avif"],
+  [".gif", "image/gif"],
+  [".jpeg", "image/jpeg"],
+  [".jpg", "image/jpeg"],
+  [".mp4", "video/mp4"],
+  [".png", "image/png"],
+  [".webm", "video/webm"],
+  [".webp", "image/webp"],
+]);
+
+function extensionFromPath(path: string): string {
+  const withoutPosition = path.replace(/:\d+(?::\d+)?$/, "");
+  const basename = basenameFromPath(withoutPosition);
+  const dotIndex = basename.lastIndexOf(".");
+  return dotIndex >= 0 ? basename.slice(dotIndex).toLowerCase() : "";
+}
+
+function mimeTypeFromMediaPath(path: string): string | null {
+  return MEDIA_EXTENSION_MIME_TYPES.get(extensionFromPath(path)) ?? null;
+}
+
+function extractAssistantMessageMediaOutputs(input: {
+  readonly text: string;
+  readonly cwd: string | undefined;
+  readonly threadRef: ScopedThreadRef | null;
+}): InlineToolMediaOutput[] {
+  if (!input.threadRef) return [];
+
+  const outputs: InlineToolMediaOutput[] = [];
+  const seenPaths = new Set<string>();
+  for (const match of input.text.matchAll(MARKDOWN_LINK_PATTERN)) {
+    const label = asNonEmptyString(match[1]);
+    const href = match[2];
+    const meta = resolveMarkdownFileLinkMeta(href, input.cwd);
+    if (!meta || seenPaths.has(meta.filePath)) continue;
+
+    const mimeType = mimeTypeFromMediaPath(meta.filePath);
+    if (!mimeType) continue;
+    const kind = mediaKindFromMimeType(mimeType);
+    if (!kind) continue;
+
+    seenPaths.add(meta.filePath);
+    outputs.push({
+      id: `assistant-media-${outputs.length}-${meta.filePath}`,
+      kind,
+      mimeType,
+      label: label ?? meta.basename,
+      resource: {
+        _tag: "workspace-file",
+        threadId: input.threadRef.threadId,
+        path: meta.filePath,
+      },
+      path: meta.filePath,
+    });
+  }
+  return outputs;
+}
+
+function extractInlineToolMediaOutputs(toolData: unknown): InlineToolMediaOutput[] {
+  const item = asRecord(toolData);
+  if (!item) return [];
+
+  const outputs: InlineToolMediaOutput[] = [];
+  const result = asRecord(item.result);
+  const contentItems = asArray(result?.content);
+  contentItems.forEach((rawContent, index) => {
+    const content = asRecord(rawContent);
+    if (!content || content.type !== "image") return;
+    const mimeType = asNonEmptyString(content.mimeType) ?? asNonEmptyString(content.mime_type);
+    if (!mimeType?.startsWith("image/")) return;
+    const src = dataUrlFromMcpImageContent(content);
+    if (!src) return;
+    outputs.push({
+      id: `${asNonEmptyString(item.id) ?? "mcp"}-image-${index}`,
+      kind: "image",
+      mimeType,
+      label: "Screenshot",
+      src,
+    });
+  });
+
+  const artifact = result ?? item;
+  const path = asNonEmptyString(artifact.path);
+  const mimeType = asNonEmptyString(artifact.mimeType) ?? asNonEmptyString(artifact.mime_type);
+  if (path && mimeType) {
+    const kind = mediaKindFromMimeType(mimeType);
+    if (kind) {
+      outputs.push({
+        id: `${asNonEmptyString(artifact.id) ?? path}-artifact`,
+        kind,
+        mimeType,
+        label: basenameFromPath(path),
+        resource: { _tag: "preview-artifact", path },
+        path,
+      });
+    }
+  }
+
+  return outputs;
+}
+
+function InlineToolMediaOutputCard(props: {
+  output: InlineToolMediaOutput;
+  environmentId: EnvironmentId;
+}) {
+  const { output, environmentId } = props;
+  if (output.resource) {
+    return (
+      <AssetInlineToolMediaOutputCard
+        output={output}
+        environmentId={environmentId}
+        resource={output.resource}
+      />
+    );
+  }
+  return <InlineToolMediaOutputFigure output={output} src={output.src ?? null} />;
+}
+
+function AssetInlineToolMediaOutputCard(props: {
+  output: InlineToolMediaOutput;
+  environmentId: EnvironmentId;
+  resource: AssetResource;
+}) {
+  const { output, environmentId, resource } = props;
+  const assetUrl = useAssetUrl(environmentId, resource);
+  return <InlineToolMediaOutputFigure output={output} src={assetUrl} />;
+}
+
+function InlineToolMediaOutputFigure(props: { output: InlineToolMediaOutput; src: string | null }) {
+  const { output, src } = props;
+  return (
+    <figure
+      className="overflow-hidden rounded-md border border-border/70 bg-muted/25"
+      onClick={stopRowToggle}
+      onPointerDown={stopRowToggle}
+      data-tool-media-output={output.kind}
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-2 py-1.5">
+        <figcaption className="min-w-0 truncate text-[11px] font-medium text-foreground/75">
+          {output.label}
+        </figcaption>
+        {output.path ? (
+          <span className="shrink-0 truncate text-[10px] text-muted-foreground/55">
+            {output.mimeType}
+          </span>
+        ) : null}
+      </div>
+      {src ? (
+        output.kind === "image" ? (
+          <img
+            src={src}
+            alt={output.label}
+            loading="lazy"
+            className="max-h-80 w-full bg-background object-contain"
+          />
+        ) : (
+          <video src={src} controls preload="metadata" className="max-h-80 w-full bg-background" />
+        )
+      ) : (
+        <div className="flex h-24 items-center justify-center px-3 text-center text-[11px] text-muted-foreground">
+          Loading media
+        </div>
+      )}
+    </figure>
+  );
+}
+
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
+  const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
@@ -1590,6 +1836,13 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const showSuccessIndicator =
     workEntryIndicatesToolSuccess(workEntry) ||
     (turnSettled && workEntryIndicatesToolNeutralStatus(workEntry));
+  const mediaOutputs = useMemo(
+    () =>
+      workEntry.itemType === "mcp_tool_call"
+        ? extractInlineToolMediaOutputs(workEntry.toolData)
+        : [],
+    [workEntry.itemType, workEntry.toolData],
+  );
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -1689,6 +1942,17 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           </div>
         </div>
       </div>
+      {mediaOutputs.length > 0 ? (
+        <div className="mt-1 ms-7 grid max-w-xl gap-2">
+          {mediaOutputs.map((output) => (
+            <InlineToolMediaOutputCard
+              key={output.id}
+              output={output}
+              environmentId={ctx.activeThreadEnvironmentId}
+            />
+          ))}
+        </div>
+      ) : null}
       {expanded && canExpand && expandedBody ? (
         <div
           className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"

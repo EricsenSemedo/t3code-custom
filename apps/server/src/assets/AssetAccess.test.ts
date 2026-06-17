@@ -62,6 +62,36 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("issues workspace URLs for media files", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-asset-workspace-media-",
+      });
+      const imagePath = path.join(root, "artifacts", "capture.png");
+      yield* fileSystem.makeDirectory(path.dirname(imagePath), { recursive: true });
+      yield* fileSystem.writeFile(imagePath, new Uint8Array([1, 2, 3]));
+
+      const result = yield* issueAssetUrl({
+        resource: {
+          _tag: "workspace-file",
+          threadId: ThreadId.make("thread-1"),
+          path: imagePath,
+        },
+        workspaceRoot: root,
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separatorIndex = suffix.indexOf("/");
+      const token = suffix.slice(0, separatorIndex);
+
+      expect(yield* resolveAsset(token, "capture.png")).toEqual({
+        kind: "file",
+        path: imagePath,
+      });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("rejects workspace files outside the authorized root", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -108,6 +138,48 @@ describe("AssetAccess", () => {
         kind: "file",
         path: attachmentPath,
       });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("issues exact preview artifact capabilities under browser-artifacts", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const artifactRoot = path.join(config.stateDir, "browser-artifacts");
+      const artifactPath = path.join(artifactRoot, "browser-recording-test.webm");
+      yield* fileSystem.makeDirectory(artifactRoot, { recursive: true });
+      yield* fileSystem.writeFile(artifactPath, new Uint8Array([1, 2, 3]));
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "preview-artifact", path: artifactPath },
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separatorIndex = suffix.indexOf("/");
+      const token = suffix.slice(0, separatorIndex);
+
+      expect(yield* resolveAsset(token, "ignored.webm")).toEqual({
+        kind: "file",
+        path: artifactPath,
+      });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("rejects preview artifact paths outside browser-artifacts", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const outside = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-preview-artifact-outside-",
+      });
+      const artifactPath = path.join(outside, "browser-recording-test.webm");
+      yield* fileSystem.writeFile(artifactPath, new Uint8Array([1, 2, 3]));
+
+      const error = yield* issueAssetUrl({
+        resource: { _tag: "preview-artifact", path: artifactPath },
+      }).pipe(Effect.flip);
+
+      expect(error.message).toContain("Preview artifact was not found");
     }).pipe(Effect.provide(testLayer)),
   );
 

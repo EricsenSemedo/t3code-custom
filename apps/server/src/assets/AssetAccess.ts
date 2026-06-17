@@ -24,24 +24,40 @@ export const FALLBACK_PROJECT_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/
 
 const SIGNING_SECRET_NAME = "asset-access-signing-key";
 const ASSET_TOKEN_TTL_MS = 60 * 60 * 1000;
-const PREVIEWABLE_EXTENSIONS = new Set([".htm", ".html", ".pdf"]);
-const PREVIEW_ASSET_EXTENSIONS = new Set([
-  ...PREVIEWABLE_EXTENSIONS,
+const PREVIEWABLE_EXTENSIONS = new Set([
   ".avif",
-  ".css",
   ".gif",
-  ".ico",
+  ".htm",
+  ".html",
   ".jpeg",
   ".jpg",
+  ".mp4",
+  ".pdf",
+  ".png",
+  ".webm",
+  ".webp",
+]);
+const PREVIEW_ASSET_EXTENSIONS = new Set([
+  ...PREVIEWABLE_EXTENSIONS,
+  ".css",
+  ".ico",
   ".js",
   ".mjs",
   ".otf",
-  ".png",
   ".svg",
   ".ttf",
-  ".webp",
   ".woff",
   ".woff2",
+]);
+const PREVIEW_ARTIFACT_EXTENSIONS = new Set([
+  ".avif",
+  ".gif",
+  ".jpeg",
+  ".jpg",
+  ".mp4",
+  ".png",
+  ".webm",
+  ".webp",
 ]);
 
 const AssetClaimsSchema = Schema.Union([
@@ -63,6 +79,12 @@ const AssetClaimsSchema = Schema.Union([
     kind: Schema.Literal("project-favicon"),
     workspaceRoot: Schema.String,
     relativePath: Schema.NullOr(Schema.String),
+    expiresAt: Schema.Number,
+  }),
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("preview-artifact"),
+    path: Schema.String,
     expiresAt: Schema.Number,
   }),
 ]);
@@ -119,6 +141,34 @@ const resolveCanonicalWorkspaceFile = Effect.fn("AssetAccess.resolveCanonicalWor
   },
 );
 
+const resolveCanonicalPreviewArtifact = Effect.fn("AssetAccess.resolveCanonicalPreviewArtifact")(
+  function* (artifactPath: string) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const config = yield* ServerConfig;
+    const artifactRoot = path.resolve(config.stateDir, "browser-artifacts");
+    const candidate = path.isAbsolute(artifactPath)
+      ? path.resolve(artifactPath)
+      : path.resolve(artifactRoot, artifactPath);
+
+    if (!PREVIEW_ARTIFACT_EXTENSIONS.has(path.extname(candidate).toLowerCase())) {
+      return null;
+    }
+
+    const [canonicalRoot, canonicalFile] = yield* Effect.all([
+      fileSystem.realPath(artifactRoot).pipe(Effect.orElseSucceed(() => null)),
+      fileSystem.realPath(candidate).pipe(Effect.orElseSucceed(() => null)),
+    ]);
+    if (!canonicalRoot || !canonicalFile) return null;
+
+    const relative = path.relative(canonicalRoot, canonicalFile);
+    if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+
+    const info = yield* fileSystem.stat(canonicalFile).pipe(Effect.orElseSucceed(() => null));
+    return info?.type === "File" ? canonicalFile : null;
+  },
+);
+
 export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (input: {
   readonly resource: AssetResource;
   readonly workspaceRoot?: string;
@@ -145,7 +195,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         .resolveRelativePathWithinRoot({ workspaceRoot, relativePath })
         .pipe(Effect.mapError((cause) => failAccess(cause.message, cause)));
       if (!PREVIEWABLE_EXTENSIONS.has(path.extname(resolved.relativePath).toLowerCase())) {
-        return yield* failAccess("Only HTML and PDF files can open in the browser.");
+        return yield* failAccess("This file type cannot be previewed in the browser.");
       }
       const canonicalFile = yield* resolveCanonicalWorkspaceFile({
         workspaceRoot,
@@ -209,6 +259,20 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       fileName = relativePath ? path.basename(relativePath) : "favicon.svg";
       break;
     }
+    case "preview-artifact": {
+      const artifactPath = yield* resolveCanonicalPreviewArtifact(input.resource.path);
+      if (!artifactPath) {
+        return yield* failAccess("Preview artifact was not found.");
+      }
+      claims = {
+        version: 1,
+        kind: "preview-artifact",
+        path: artifactPath,
+        expiresAt,
+      };
+      fileName = path.basename(artifactPath);
+      break;
+    }
   }
 
   const secretStore = yield* ServerSecretStore;
@@ -263,6 +327,11 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       relativePath: claims.relativePath,
     });
     return faviconPath ? ({ kind: "file", path: faviconPath } satisfies ResolvedAsset) : null;
+  }
+
+  if (claims.kind === "preview-artifact") {
+    const artifactPath = yield* resolveCanonicalPreviewArtifact(claims.path);
+    return artifactPath ? ({ kind: "file", path: artifactPath } satisfies ResolvedAsset) : null;
   }
 
   const decodedPath = decodeRelativePath(relativePath);
