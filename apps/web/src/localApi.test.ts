@@ -657,6 +657,11 @@ describe("wsApi", () => {
       sidebarThreadSortOrder: "created_at" as const,
       sidebarThreadPreviewCount: 6,
       timestampFormat: "24-hour" as const,
+      tts: {
+        enabled: true,
+        serverUrl: "http://127.0.0.1:8880",
+        voice: "af_heart",
+      },
     };
     const getClientSettings = vi.fn().mockResolvedValue({
       ...clientSettings,
@@ -720,6 +725,11 @@ describe("wsApi", () => {
       sidebarThreadSortOrder: "created_at" as const,
       sidebarThreadPreviewCount: 6,
       timestampFormat: "24-hour" as const,
+      tts: {
+        enabled: true,
+        serverUrl: "http://127.0.0.1:8880",
+        voice: "af_heart",
+      },
     };
 
     await api.persistence.setClientSettings(clientSettings);

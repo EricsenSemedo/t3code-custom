@@ -844,6 +844,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const timestampFormat = settings.timestampFormat;
   const autoOpenPlanSidebar = settings.autoOpenPlanSidebar;
+  const ttsEnabled = settings.tts.enabled;
   const navigate = useNavigate();
   const rawSearch = useSearch({
     strict: false,
@@ -3873,6 +3874,7 @@ export default function ChatView(props: ChatViewProps) {
               timestampFormat={timestampFormat}
               workspaceRoot={activeWorkspaceRoot}
               skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
+              ttsEnabled={ttsEnabled}
               onIsAtEndChange={onIsAtEndChange}
             />
 

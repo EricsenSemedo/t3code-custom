@@ -1,8 +1,18 @@
-import { ArchiveIcon, ArchiveX, LoaderIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArchiveX,
+  Loader2Icon,
+  LoaderIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  Volume2Icon,
+  VolumeXIcon,
+} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  MessageId,
   defaultInstanceIdForDriver,
   type DesktopUpdateChannel,
   PROVIDER_DISPLAY_NAMES,
@@ -12,7 +22,11 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import {
+  DEFAULT_TTS_SERVER_URL,
+  DEFAULT_TTS_VOICE,
+  DEFAULT_UNIFIED_SETTINGS,
+} from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
@@ -33,6 +47,7 @@ import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hos
 import { useTheme } from "../../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
+import { useTtsPlayer } from "../../hooks/useTtsPlayer";
 import {
   setDesktopUpdateStateQueryData,
   useDesktopUpdateState,
@@ -54,7 +69,8 @@ import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
-import { stackedThreadToast, toastManager } from "../ui/toast";
+import { anchoredToastManager, stackedThreadToast, toastManager } from "../ui/toast";
+import { useAudioPlayerStore } from "../../audioPlayerStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import {
@@ -102,6 +118,7 @@ const TIMESTAMP_FORMAT_LABELS = {
 } as const;
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+const TTS_PREVIEW_MESSAGE_ID = MessageId.make("__tts_settings_preview__");
 
 function withoutProviderInstanceKey<V>(
   record: Readonly<Record<ProviderInstanceId, V>> | undefined,
@@ -485,6 +502,7 @@ export function GeneralSettingsPanel() {
   const { updateSettings } = useUpdateSettings();
   const observability = useServerObservability();
   const serverProviders = useServerProviders();
+  const ttsPlayer = useTtsPlayer();
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -492,6 +510,35 @@ export function GeneralSettingsPanel() {
     otlpMetricsEnabled: observability?.otlpMetricsEnabled ?? false,
     otlpMetricsUrl: observability?.otlpMetricsUrl,
   });
+  const ttsPreviewButtonRef = useRef<HTMLButtonElement>(null);
+  // Mirror playback state for the Test button. Without this, the button gives
+  // no feedback during synthesis/playback and silently swallows errors —
+  // there's no `MessagePlayButton` mounted in Settings, so the error toast
+  // surface that lives on each play button isn't reachable from here.
+  const { ttsPreviewStatus, ttsPreviewPlayingId, ttsPreviewErrorMessageId, ttsPreviewError } =
+    useAudioPlayerStore(
+      useShallow((s) => ({
+        ttsPreviewStatus: s.status,
+        ttsPreviewPlayingId: s.playingMessageId,
+        ttsPreviewErrorMessageId: s.errorMessageId,
+        ttsPreviewError: s.error,
+      })),
+    );
+  const isTtsPreviewActive = ttsPreviewPlayingId === TTS_PREVIEW_MESSAGE_ID;
+  const isTtsPreviewLoading = isTtsPreviewActive && ttsPreviewStatus === "loading";
+  const isTtsPreviewPlaying = isTtsPreviewActive && ttsPreviewStatus === "playing";
+
+  useEffect(() => {
+    if (ttsPreviewError === null || ttsPreviewButtonRef.current === null) return;
+    if (ttsPreviewErrorMessageId !== TTS_PREVIEW_MESSAGE_ID) return;
+    anchoredToastManager.add({
+      data: { tooltipStyle: true },
+      positionerProps: { anchor: ttsPreviewButtonRef.current },
+      timeout: 4000,
+      title: "TTS playback failed",
+      description: ttsPreviewError,
+    });
+  }, [ttsPreviewError, ttsPreviewErrorMessageId]);
 
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenInstanceId = textGenerationModelSelection.instanceId;
@@ -888,6 +935,126 @@ export function GeneralSettingsPanel() {
                   });
                 }}
               />
+            </div>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Text-to-speech">
+        <SettingsRow
+          title="Read assistant messages"
+          description="Show a play button next to completed assistant messages. Audio is generated by a locally running Kokoro-FastAPI server."
+          resetAction={
+            settings.tts.enabled !== DEFAULT_UNIFIED_SETTINGS.tts.enabled ? (
+              <SettingResetButton
+                label="text-to-speech"
+                onClick={() =>
+                  updateSettings({
+                    tts: { ...settings.tts, enabled: DEFAULT_UNIFIED_SETTINGS.tts.enabled },
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.tts.enabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ tts: { ...settings.tts, enabled: Boolean(checked) } })
+              }
+              aria-label="Enable text-to-speech playback"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Server URL"
+          description={`Endpoint for the Kokoro-FastAPI server. Default ${DEFAULT_TTS_SERVER_URL} runs on this machine.`}
+          resetAction={
+            settings.tts.serverUrl !== DEFAULT_UNIFIED_SETTINGS.tts.serverUrl ? (
+              <SettingResetButton
+                label="TTS server URL"
+                onClick={() =>
+                  updateSettings({
+                    tts: { ...settings.tts, serverUrl: DEFAULT_UNIFIED_SETTINGS.tts.serverUrl },
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <DraftInput
+              className="w-full sm:w-72"
+              value={settings.tts.serverUrl}
+              onCommit={(serverUrl) => updateSettings({ tts: { ...settings.tts, serverUrl } })}
+              placeholder={DEFAULT_TTS_SERVER_URL}
+              spellCheck={false}
+              aria-label="TTS server URL"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Voice"
+          description={`Kokoro voice identifier. Default is "${DEFAULT_TTS_VOICE}". Use the Test button to preview.`}
+          resetAction={
+            settings.tts.voice !== DEFAULT_UNIFIED_SETTINGS.tts.voice ? (
+              <SettingResetButton
+                label="TTS voice"
+                onClick={() =>
+                  updateSettings({
+                    tts: { ...settings.tts, voice: DEFAULT_UNIFIED_SETTINGS.tts.voice },
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <div className="flex w-full flex-wrap items-center justify-end gap-1.5 sm:w-auto">
+              <DraftInput
+                className="w-full sm:w-44"
+                value={settings.tts.voice}
+                onCommit={(voice) => updateSettings({ tts: { ...settings.tts, voice } })}
+                placeholder={DEFAULT_TTS_VOICE}
+                spellCheck={false}
+                aria-label="TTS voice"
+              />
+              <Button
+                ref={ttsPreviewButtonRef}
+                size="xs"
+                variant="outline"
+                disabled={
+                  isTtsPreviewActive
+                    ? false
+                    : settings.tts.voice.trim().length === 0 ||
+                      settings.tts.serverUrl.trim().length === 0
+                }
+                onClick={() => {
+                  if (isTtsPreviewActive) {
+                    ttsPlayer.stop();
+                  } else {
+                    void ttsPlayer
+                      .play(
+                        TTS_PREVIEW_MESSAGE_ID,
+                        `This is the ${settings.tts.voice} voice. The quick brown fox jumps over the lazy dog.`,
+                      )
+                      .catch(() => {
+                        // Errors surface via the audioPlayerStore + the
+                        // anchored-toast effect above.
+                      });
+                  }
+                }}
+                aria-label={isTtsPreviewActive ? "Stop TTS preview" : "Play TTS preview"}
+              >
+                {isTtsPreviewLoading ? (
+                  <Loader2Icon className="size-3 animate-spin" />
+                ) : isTtsPreviewPlaying ? (
+                  <VolumeXIcon className="size-3" />
+                ) : (
+                  <Volume2Icon className="size-3" />
+                )}
+                <span>{isTtsPreviewActive ? "Stop" : "Test"}</span>
+              </Button>
             </div>
           }
         />
