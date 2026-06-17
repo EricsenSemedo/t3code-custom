@@ -249,6 +249,18 @@ function createMockEnvironmentApi(input: {
     filesystem: {
       browse: input.browse,
     },
+    assets: {
+      createUrl: vi.fn(async ({ resource }) => ({
+        relativeUrl: `/api/assets/test/${encodeURIComponent(
+          resource._tag === "attachment"
+            ? resource.attachmentId
+            : resource._tag === "project-favicon"
+              ? "favicon.svg"
+              : (resource.path.split(/[\\/]/).at(-1) ?? "asset"),
+        )}`,
+        expiresAt: Date.now() + 60_000,
+      })),
+    },
     sourceControl: {} as EnvironmentApi["sourceControl"],
     vcs: {} as EnvironmentApi["vcs"],
     git: {} as EnvironmentApi["git"],

@@ -111,6 +111,9 @@ vi.mock("@t3tools/client-runtime", async (importOriginal) => {
     filesystem: {
       browse: vi.fn(),
     },
+    assets: {
+      createUrl: vi.fn(),
+    },
     sourceControl: {
       lookupRepository: vi.fn(),
       cloneRepository: vi.fn(),
