@@ -78,7 +78,7 @@ import {
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { useAssetUrl } from "~/assets/assetUrls";
+import { useAssetUrlState } from "~/assets/assetUrls";
 import {
   deriveDisplayedUserMessageState,
   type ParsedTerminalContextEntry,
@@ -1650,12 +1650,24 @@ function AssetInlineToolMediaOutputCard(props: {
   resource: AssetResource;
 }) {
   const { output, environmentId, resource } = props;
-  const assetUrl = useAssetUrl(environmentId, resource);
-  return <InlineToolMediaOutputFigure output={output} src={assetUrl} />;
+  const assetUrl = useAssetUrlState(environmentId, resource);
+  return (
+    <InlineToolMediaOutputFigure
+      output={output}
+      src={assetUrl.url}
+      error={assetUrl.error}
+      loading={assetUrl.loading}
+    />
+  );
 }
 
-function InlineToolMediaOutputFigure(props: { output: InlineToolMediaOutput; src: string | null }) {
-  const { output, src } = props;
+function InlineToolMediaOutputFigure(props: {
+  output: InlineToolMediaOutput;
+  src: string | null;
+  error?: string | null;
+  loading?: boolean;
+}) {
+  const { output, src, error = null, loading = src === null && !error } = props;
   return (
     <figure
       className="overflow-hidden rounded-md border border-border/70 bg-muted/25"
@@ -1684,9 +1696,18 @@ function InlineToolMediaOutputFigure(props: { output: InlineToolMediaOutput; src
         ) : (
           <video src={src} controls preload="metadata" className="max-h-80 w-full bg-background" />
         )
-      ) : (
+      ) : error ? (
+        <div className="flex min-h-24 flex-col items-center justify-center gap-1 px-3 py-4 text-center text-[11px] text-muted-foreground">
+          <span className="font-medium text-foreground/70">Media unavailable</span>
+          <span className="max-w-full break-words">{error}</span>
+        </div>
+      ) : loading ? (
         <div className="flex h-24 items-center justify-center px-3 text-center text-[11px] text-muted-foreground">
           Loading media
+        </div>
+      ) : (
+        <div className="flex h-24 items-center justify-center px-3 text-center text-[11px] text-muted-foreground">
+          Media unavailable
         </div>
       )}
     </figure>

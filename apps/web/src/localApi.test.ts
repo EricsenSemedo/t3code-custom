@@ -61,6 +61,9 @@ const rpcClientMock = {
   filesystem: {
     browse: vi.fn(),
   },
+  assets: {
+    createUrl: vi.fn(),
+  },
   sourceControl: {
     lookupRepository: vi.fn(),
     cloneRepository: vi.fn(),
@@ -523,6 +526,29 @@ describe("wsApi", () => {
       partialPath: "/tmp/project/",
       cwd: "/tmp/project",
     });
+  });
+
+  it("forwards asset URL requests to the RPC client", async () => {
+    rpcClientMock.assets.createUrl.mockResolvedValue({
+      relativeUrl: "/api/assets/token/capture.png",
+      expiresAt: 1_800_000_000_000,
+    });
+    const { createEnvironmentApi } = await import("./environmentApi");
+
+    const api = createEnvironmentApi(rpcClientMock as never);
+    const input = {
+      resource: {
+        _tag: "workspace-file",
+        threadId: ThreadId.make("thread-1"),
+        path: "/tmp/project/capture.png",
+      },
+    } as const;
+    await expect(api.assets.createUrl(input)).resolves.toEqual({
+      relativeUrl: "/api/assets/token/capture.png",
+      expiresAt: 1_800_000_000_000,
+    });
+
+    expect(rpcClientMock.assets.createUrl).toHaveBeenCalledWith(input);
   });
 
   it("forwards full-thread diff requests to the orchestration RPC", async () => {

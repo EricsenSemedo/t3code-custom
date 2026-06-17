@@ -47,8 +47,26 @@ vi.mock("@pierre/diffs/react", () => {
 });
 
 vi.mock("~/assets/assetUrls", () => ({
-  useAssetUrl: (_environmentId: EnvironmentId, resource: { path?: string }) =>
-    resource.path ? `/api/assets/test/${encodeURIComponent(resource.path)}` : null,
+  useAssetUrlState: (_environmentId: EnvironmentId, resource: { path?: string }) => {
+    if (resource.path?.includes("outside-workspace")) {
+      return {
+        url: null,
+        error: "Path must be relative to the project root.",
+        loading: false,
+      };
+    }
+    return resource.path
+      ? {
+          url: `/api/assets/test/${encodeURIComponent(resource.path)}`,
+          error: null,
+          loading: false,
+        }
+      : {
+          url: null,
+          error: "Workspace asset was not found.",
+          loading: false,
+        };
+  },
 }));
 
 function matchMedia() {
@@ -459,5 +477,23 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("<video");
     expect(markup).toContain(encodeURIComponent(imagePath));
     expect(markup).toContain(encodeURIComponent(videoPath));
+  });
+
+  it("shows asset access failures instead of loading forever", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const imagePath = "/home/ericsens/outside-workspace/capture.png";
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        markdownCwd="/home/ericsens/projects/toonsync"
+        workspaceRoot="/home/ericsens/projects/toonsync"
+        timelineEntries={[buildAssistantTimelineEntry(`Screenshot: [capture.png](${imagePath})`)]}
+      />,
+    );
+
+    expect(markup).toContain('data-tool-media-output="image"');
+    expect(markup).toContain("Media unavailable");
+    expect(markup).toContain("Path must be relative to the project root.");
+    expect(markup).not.toContain("Loading media");
   });
 });
