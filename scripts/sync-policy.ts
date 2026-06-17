@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync } from "node:fs";
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Data from "effect/Data";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Schema from "effect/Schema";
 
 export const MANAGED_SYNC_LABELS = [
   "upstream-sync",
@@ -44,6 +49,13 @@ export interface SyncPolicyResult {
   readonly protectedFiles: ReadonlyArray<string>;
   readonly summary: string;
 }
+
+class SyncPolicyIoError extends Data.TaggedError("SyncPolicyIoError")<{
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
+
+const encodeJsonString = Schema.encodeEffect(Schema.UnknownFromJsonString);
 
 function isProtectedPath(filePath: string): boolean {
   return (
@@ -93,6 +105,7 @@ export function classifySyncFiles(files: ReadonlyArray<string>): SyncPolicyResul
 
 interface CliOptions {
   readonly files: ReadonlyArray<string>;
+  readonly filesFile: string | null;
   readonly githubOutput: string | null;
 }
 
@@ -121,14 +134,33 @@ function parseArgs(argv: ReadonlyArray<string>): CliOptions {
     files.push(arg);
   }
 
-  if (filesFile) {
-    files.push(...readFileSync(filesFile, "utf8").split(/\r?\n/g));
-  }
-
-  return { files, githubOutput };
+  return { files, filesFile, githubOutput };
 }
 
-function writeGithubOutput(outputPath: string, result: SyncPolicyResult): void {
+const readCliFiles = Effect.fn("readCliFiles")(function* (
+  options: CliOptions,
+): Effect.fn.Return<ReadonlyArray<string>, SyncPolicyIoError, FileSystem.FileSystem> {
+  if (!options.filesFile) {
+    return options.files;
+  }
+  const fs = yield* FileSystem.FileSystem;
+  const fileContents = yield* fs.readFileString(options.filesFile).pipe(
+    Effect.mapError(
+      (cause) =>
+        new SyncPolicyIoError({
+          message: `Failed to read files list from ${options.filesFile}.`,
+          cause,
+        }),
+    ),
+  );
+  return [...options.files, ...fileContents.split(/\r?\n/g)];
+});
+
+const writeGithubOutput = Effect.fn("writeGithubOutput")(function* (
+  outputPath: string,
+  result: SyncPolicyResult,
+): Effect.fn.Return<void, SyncPolicyIoError, FileSystem.FileSystem> {
+  const fs = yield* FileSystem.FileSystem;
   const lines = [
     `labels=${result.labels.join(",")}`,
     `auto_merge_allowed=${String(result.autoMergeAllowed)}`,
@@ -138,16 +170,42 @@ function writeGithubOutput(outputPath: string, result: SyncPolicyResult): void {
     `protected_files=${result.protectedFiles.join(",")}`,
     `summary=${result.summary}`,
   ];
-  writeFileSync(outputPath, `${lines.join("\n")}\n`, { flag: "a" });
-}
+  yield* fs.writeFileString(outputPath, `${lines.join("\n")}\n`, { flag: "a" }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new SyncPolicyIoError({
+          message: `Failed to write GitHub output to ${outputPath}.`,
+          cause,
+        }),
+    ),
+  );
+});
+
+const runCli = Effect.fn("runCli")(function* (
+  argv: ReadonlyArray<string>,
+): Effect.fn.Return<void, SyncPolicyIoError, FileSystem.FileSystem> {
+  const options = parseArgs(argv);
+  const files = yield* readCliFiles(options);
+  const result = classifySyncFiles(files);
+  if (options.githubOutput) {
+    yield* writeGithubOutput(options.githubOutput, result);
+  }
+  const output = yield* encodeJsonString(result).pipe(
+    Effect.mapError(
+      (cause) =>
+        new SyncPolicyIoError({
+          message: "Failed to encode sync policy result.",
+          cause,
+        }),
+    ),
+  );
+  yield* Effect.sync(() => {
+    process.stdout.write(`${output}\n`);
+  });
+});
 
 const isEntrypoint = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1]);
 
 if (isEntrypoint) {
-  const options = parseArgs(process.argv.slice(2));
-  const result = classifySyncFiles(options.files);
-  if (options.githubOutput) {
-    writeGithubOutput(options.githubOutput, result);
-  }
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  runCli(process.argv.slice(2)).pipe(Effect.provide(NodeServices.layer), NodeRuntime.runMain);
 }
