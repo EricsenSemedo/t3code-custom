@@ -3,16 +3,60 @@ import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
-  ClientSettingsPatch,
+  ClientSettingsSchema,
+  DEFAULT_TTS_SERVER_URL,
+  DEFAULT_TTS_VOICE,
   DEFAULT_SERVER_SETTINGS,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
 
+const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
-const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
+
+describe("ClientSettings word wrap", () => {
+  it("defaults word wrap on", () => {
+    expect(decodeClientSettings({}).wordWrap).toBe(true);
+  });
+
+  it("ignores obsolete wrapping preferences", () => {
+    const decoded = decodeClientSettings({
+      chatWordWrap: false,
+      diffWordWrap: false,
+    });
+
+    expect(decoded.wordWrap).toBe(true);
+    expect(decoded).not.toHaveProperty("chatWordWrap");
+    expect(decoded).not.toHaveProperty("diffWordWrap");
+  });
+});
+
+describe("ClientSettings TTS", () => {
+  it("defaults TTS settings", () => {
+    expect(decodeClientSettings({}).tts).toEqual({
+      enabled: true,
+      serverUrl: DEFAULT_TTS_SERVER_URL,
+      voice: DEFAULT_TTS_VOICE,
+    });
+  });
+
+  it("falls back when TTS strings are blank", () => {
+    expect(
+      decodeClientSettings({
+        tts: {
+          serverUrl: "",
+          voice: "",
+        },
+      }).tts,
+    ).toEqual({
+      enabled: true,
+      serverUrl: DEFAULT_TTS_SERVER_URL,
+      voice: DEFAULT_TTS_VOICE,
+    });
+  });
+});
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
@@ -67,6 +111,18 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
         providerInstances: { "1bad": { driver: "codex" } },
       }),
     ).toThrow();
+  });
+});
+
+describe("ServerSettings worktree defaults", () => {
+  it("defaults start-from-origin off for legacy configs", () => {
+    expect(decodeServerSettings({}).newWorktreesStartFromOrigin).toBe(false);
+  });
+
+  it("accepts start-from-origin updates", () => {
+    expect(
+      decodeServerSettingsPatch({ newWorktreesStartFromOrigin: true }).newWorktreesStartFromOrigin,
+    ).toBe(true);
   });
 });
 
@@ -155,19 +211,5 @@ describe("ServerSettingsPatch string normalization", () => {
 
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
     expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
-  });
-});
-
-describe("ClientSettingsPatch.tts", () => {
-  it("does not apply TTS defaults to omitted partial patch fields", () => {
-    const patch = decodeClientSettingsPatch({
-      tts: {
-        voice: "  af_bella  ",
-      },
-    });
-
-    expect(patch.tts).toEqual({
-      voice: "af_bella",
-    });
   });
 });

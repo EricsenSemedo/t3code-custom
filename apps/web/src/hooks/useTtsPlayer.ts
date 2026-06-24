@@ -12,7 +12,7 @@
  */
 import { useCallback } from "react";
 import { type MessageId } from "@t3tools/contracts";
-import { useSettings } from "./useSettings";
+import { useClientSettings } from "./useSettings";
 import { useAudioPlayerStore } from "~/audioPlayerStore";
 import { splitTextForTts, synthesizeSpeech } from "~/lib/ttsClient";
 
@@ -240,7 +240,7 @@ function waitForAudioEnd(audio: HTMLAudioElement, session: PlaybackSession): Pro
 }
 
 export function useTtsPlayer() {
-  const tts = useSettings((s) => s.tts);
+  const tts = useClientSettings((settings) => settings.tts);
 
   const play = useCallback(
     (id: MessageId, text: string) =>

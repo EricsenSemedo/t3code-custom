@@ -1,15 +1,13 @@
+import { useAtomValue } from "@effect/atom-react";
+import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
-import { useEffect, useMemo, useState } from "react";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { useMemo } from "react";
 
-import { readEnvironmentApi } from "~/environmentApi";
-import { readEnvironmentConnection } from "~/environments/runtime";
+import { assetEnvironment } from "~/state/assets";
+import { usePreparedConnection } from "~/state/session";
 
-const REFRESH_MARGIN_MS = 30_000;
-
-interface CachedAssetUrl {
-  readonly url: string;
-  readonly expiresAt: number;
-}
+export { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 
 export interface AssetUrlState {
   readonly url: string | null;
@@ -17,103 +15,84 @@ export interface AssetUrlState {
   readonly loading: boolean;
 }
 
-const assetUrlCache = new Map<string, CachedAssetUrl>();
-const assetUrlRequests = new Map<string, Promise<CachedAssetUrl>>();
-
-function assetCacheKey(environmentId: EnvironmentId, resource: AssetResource): string {
-  return `${environmentId}:${JSON.stringify(resource)}`;
-}
-
-export async function resolveAssetUrl(
-  environmentId: EnvironmentId,
-  resource: AssetResource,
-): Promise<CachedAssetUrl> {
-  const key = assetCacheKey(environmentId, resource);
-  const cached = assetUrlCache.get(key);
-  if (cached && cached.expiresAt - REFRESH_MARGIN_MS > Date.now()) {
-    return cached;
+function assetUrlErrorMessage(result: unknown): string {
+  if (
+    result !== null &&
+    typeof result === "object" &&
+    "error" in result &&
+    result.error instanceof Error &&
+    result.error.message.trim().length > 0
+  ) {
+    return result.error.message;
   }
-
-  const inFlight = assetUrlRequests.get(key);
-  if (inFlight) {
-    return inFlight;
+  if (result instanceof Error && result.message.trim().length > 0) {
+    return result.message;
   }
-
-  const request = (async () => {
-    const api = readEnvironmentApi(environmentId);
-    const connection = readEnvironmentConnection(environmentId);
-    if (!api || !connection) {
-      throw new Error("Environment is not connected.");
-    }
-    const result = await api.assets.createUrl({ resource });
-    const cachedResult = {
-      url: new URL(result.relativeUrl, connection.knownEnvironment.target.httpBaseUrl).toString(),
-      expiresAt: result.expiresAt,
-    };
-    assetUrlCache.set(key, cachedResult);
-    return cachedResult;
-  })().finally(() => {
-    assetUrlRequests.delete(key);
-  });
-  assetUrlRequests.set(key, request);
-  return request;
+  return "Media could not be loaded.";
 }
 
 export function useAssetUrl(environmentId: EnvironmentId, resource: AssetResource): string | null {
-  return useAssetUrlState(environmentId, resource).url;
-}
-
-function assetUrlErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
+  const preparedConnection = usePreparedConnection(environmentId);
+  const result = useAtomValue(
+    assetEnvironment.createUrl({
+      environmentId,
+      input: { resource },
+    }),
+  );
+  if (preparedConnection._tag === "None" || result._tag !== "Success") {
+    return null;
   }
-  return "Media could not be loaded.";
+  return resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl);
 }
 
 export function useAssetUrlState(
   environmentId: EnvironmentId,
   resource: AssetResource,
 ): AssetUrlState {
-  const resourceJson = JSON.stringify(resource);
-  const stableResource = useMemo(() => JSON.parse(resourceJson) as AssetResource, [resourceJson]);
-  const key = assetCacheKey(environmentId, stableResource);
-  const [state, setState] = useState<AssetUrlState>(() => {
-    const cached = assetUrlCache.get(key);
+  const preparedConnection = usePreparedConnection(environmentId);
+  const result = useAtomValue(
+    assetEnvironment.createUrl({
+      environmentId,
+      input: { resource },
+    }),
+  );
+
+  if (preparedConnection._tag === "None") {
+    return { url: null, error: null, loading: true };
+  }
+  if (result._tag === "Success") {
     return {
-      url: cached?.url ?? null,
+      url: resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl),
       error: null,
-      loading: !cached,
+      loading: false,
     };
-  });
+  }
+  if (result._tag === "Failure") {
+    return { url: null, error: assetUrlErrorMessage(result), loading: false };
+  }
+  return { url: null, error: null, loading: true };
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const load = () => {
-      setState((current) => ({ ...current, error: null, loading: current.url === null }));
-      void resolveAssetUrl(environmentId, stableResource)
-        .then((result) => {
-          if (cancelled) return;
-          setState({ url: result.url, error: null, loading: false });
-          refreshTimer = setTimeout(
-            load,
-            Math.max(0, result.expiresAt - Date.now() - REFRESH_MARGIN_MS),
-          );
-        })
-        .catch((error: unknown) => {
-          if (!cancelled) {
-            setState({ url: null, error: assetUrlErrorMessage(error), loading: false });
-          }
-        });
-    };
-    load();
-
-    return () => {
-      cancelled = true;
-      if (refreshTimer) clearTimeout(refreshTimer);
-    };
-  }, [environmentId, key, stableResource]);
-
-  return state;
+export function useAssetUrls(
+  environmentId: EnvironmentId,
+  resources: ReadonlyArray<AssetResource>,
+): ReadonlyArray<string | null> {
+  const preparedConnection = usePreparedConnection(environmentId);
+  const results = useAtomValue(
+    assetEnvironment.createUrls({
+      environmentId,
+      resources,
+    }),
+  );
+  return useMemo(
+    () =>
+      preparedConnection._tag === "None"
+        ? resources.map(() => null)
+        : results.map((result) =>
+            AsyncResult.isSuccess(result)
+              ? resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl)
+              : null,
+          ),
+    [preparedConnection, resources, results],
+  );
 }
